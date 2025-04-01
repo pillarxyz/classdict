@@ -25,6 +25,7 @@ show_usage() {
     echo "  -c, --context LINES    Show LINES of context before and after the match"
     echo "  -e, --exact            Require exact match (with diacritical flexibility)"
     echo "  -S, --suggest          Show suggestions for similar words when no match is found"
+    echo "  -d, --direct           Print directly to terminal (no external viewer)"
     echo ""
     echo "Example: $0 zythum"
     echo "         $0 --smart amor"
@@ -37,6 +38,7 @@ USE_SMART_QUOTES=false
 CONTEXT_LINES=0
 EXACT_MATCH=false
 SUGGEST=false
+DIRECT_OUTPUT=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -65,6 +67,10 @@ while [[ $# -gt 0 ]]; do
             SUGGEST=true
             shift
             ;;
+        -d|--direct)
+            DIRECT_OUTPUT=true
+            shift
+            ;;
         *)
             SEARCH_WORD="$1"
             shift
@@ -86,14 +92,57 @@ if [ ! -f "$DICTIONARY_FILE" ]; then
     exit 1
 fi
 
-echo "Searching for '$SEARCH_WORD' in Lewis & Short Latin Dictionary..."
-echo "-------------------------------------------------------------"
+# Check if less exists
+check_viewer() {
+    if ! command -v "less" &> /dev/null; then
+        echo "Warning: less not found. Falling back to direct output."
+        DIRECT_OUTPUT=true
+    fi
+}
+
+# Create a function to handle output to either temp file or terminal
+output_result() {
+    if [ "$DIRECT_OUTPUT" = true ]; then
+        # Just print directly
+        cat -
+    else
+        # Append to temp file
+        cat - >> "$TEMP_FILE"
+    fi
+}
+
+# Function to display output in less
+display_output() {
+    if [ "$DIRECT_OUTPUT" = false ] && [ -s "$TEMP_FILE" ]; then
+        # Display the content using less
+        less "$TEMP_FILE"
+    fi
+}
+
+# Set up output method
+if [ "$DIRECT_OUTPUT" = false ]; then
+    # Create a temporary file that will persist until script ends
+    TEMP_FILE=$(mktemp /tmp/lslatdict.XXXXXX)
+
+    # Set up trap to clean up on exit
+    trap 'rm -f "$TEMP_FILE"' EXIT
+
+    check_viewer
+
+    # Print to terminal that we're searching
+    echo "Searching for '$SEARCH_WORD' in Lewis & Short Latin Dictionary..."
+fi
+
+# Start building output
+{
+    echo "Searching for '$SEARCH_WORD' in Lewis & Short Latin Dictionary..."
+    echo "-------------------------------------------------------------"
+} | output_result
 
 # Create a diacritical-flexible pattern for Latin characters
 create_diacritic_pattern() {
     local input="$1"
     local pattern=""
-
     for (( i=0; i<${#input}; i++ )); do
         char="${input:$i:1}"
         case "$char" in
@@ -106,80 +155,85 @@ create_diacritic_pattern() {
             *) pattern+="$char" ;;
         esac
     done
-
     echo "$pattern"
 }
 
-# Handle exact match with diacritical flexibility
-if [ "$EXACT_MATCH" = true ]; then
-    # Create pattern with diacritical flexibility
-    relaxed_pattern=$(create_diacritic_pattern "$SEARCH_WORD")
+# Function to search for the entry
+find_headword() {
+    local search_word="$1"
+    local line_number=""
 
-    # Look for the exact word with diacritical flexibility at line start
-    pattern="^$relaxed_pattern[[:punct:][:space:]]"
+    # First attempt: try to find the exact word as a headword with a clear boundary
+    # This specifically looks for dictionary headwords which are typically at the start of a line
+    # and followed by a comma, period, or parenthesis
+    pattern="^[[:space:]]*$search_word[[:space:]]*[,.(]"
     line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
 
-    # If not found, try case-insensitive
+    # If not found, try with diacritical flexibility
     if [ -z "$line_number" ]; then
-        line_number=$(grep -in "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+        relaxed_pattern=$(create_diacritic_pattern "$search_word")
+        pattern="^[[:space:]]*$relaxed_pattern[[:space:]]*[,.(]"
+        line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
     fi
-else
-    # Standard search with progressive relaxation
-    pattern="^$SEARCH_WORD[[:punct:][:space:]]"
-    line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
 
-    # If not found, try more flexible approaches
-    if [ -z "$line_number" ]; then
-        # Try looking for the word as part of a verb entry (like "ămo, āvi, ātum")
-        # This helps with entries that have diacritical marks at the beginning
-        line_number=$(grep -n "^[ăāĕēĭīŏōŭū]$SEARCH_WORD[,[:space:]]" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+    # If still not found and not in exact match mode, try more flexible approaches
+    if [ -z "$line_number" ] && [ "$EXACT_MATCH" != true ]; then
+        # Try looking for common entry patterns like "ămo, āvi, ātum"
+        pattern="^[[:space:]]*[ăāĕēĭīŏōŭū]?$search_word[[:space:]]*[,]"
+        line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
 
-        # Try ignoring case for more flexible matching
+        # Try with diacritical flexibility
         if [ -z "$line_number" ]; then
-            line_number=$(grep -in "^$SEARCH_WORD[[:punct:][:space:]]" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+            relaxed_pattern=$(create_diacritic_pattern "$search_word")
+            pattern="^[[:space:]]*[ăāĕēĭīŏōŭū]?$relaxed_pattern[[:space:]]*[,]"
+            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
         fi
 
-        # Try a more relaxed search that accounts for diacritical marks
-        if [ -z "$line_number" ]; then
-            relaxed_pattern=$(create_diacritic_pattern "$SEARCH_WORD")
-            line_number=$(grep -n "^$relaxed_pattern[[:punct:][:space:]]" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-
-            # If still not found, try another approach - sometimes entries have hyphens, brackets, etc.
-            if [ -z "$line_number" ]; then
-                # Remove leading/trailing dashes or brackets to catch compound forms
-                relaxed_pattern=$(echo "$relaxed_pattern" | sed 's/^\[\^-\]//; s/\[\^-\]$//')
-                line_number=$(grep -n "^[^-]*$relaxed_pattern[^-]*[[:punct:][:space:]]" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-            fi
+        # Try looking for the word as part of a hyphenated or compound term at the start of entry
+        if [ -z "$line_number" ] && [ ${#search_word} -gt 2 ]; then
+            relaxed_pattern=$(create_diacritic_pattern "$search_word")
+            pattern="^[[:space:]]*[^-]*$relaxed_pattern[^-]*[[:space:]]*[,.(]"
+            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
         fi
 
-        # If still not found, try removing the last character (for declined/conjugated forms)
-        if [ -z "$line_number" ] && [ ${#SEARCH_WORD} -gt 2 ]; then
-            stem="${SEARCH_WORD%?}"
+        # Try removing the last character (for declined/conjugated forms)
+        if [ -z "$line_number" ] && [ ${#search_word} -gt 2 ]; then
+            stem="${search_word%?}"
             stem_pattern=$(create_diacritic_pattern "$stem")
-            line_number=$(grep -n "^$stem_pattern[[:alpha:]]*[,[:space:]]" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+            pattern="^[[:space:]]*$stem_pattern[[:alpha:]]*[[:space:]]*[,.(]"
+            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
         fi
     fi
-fi
+
+    echo "$line_number"
+}
+
+# Find the headword entry
+line_number=$(find_headword "$SEARCH_WORD")
 
 # If we still haven't found the word, try to provide suggestions if enabled
 if [ -z "$line_number" ]; then
-    echo "No entry found for '$SEARCH_WORD'."
-    echo "Try checking the spelling or searching for a different form of the word."
+    {
+        echo "No entry found for '$SEARCH_WORD'."
+        echo "Try checking the spelling or searching for a different form of the word."
 
-    if [ "$SUGGEST" = true ]; then
-        echo ""
-        echo "Possible related entries:"
-        relaxed_pattern=$(create_diacritic_pattern "$SEARCH_WORD")
-        grep -i "^$relaxed_pattern" "$DICTIONARY_FILE" | head -5
-
-        # If nothing found with prefix, try substring match
-        if [ -z "$(grep -i "^$relaxed_pattern" "$DICTIONARY_FILE" | head -1)" ]; then
+        if [ "$SUGGEST" = true ]; then
             echo ""
-            echo "Or perhaps one of these entries contains your word:"
-            grep -i "$SEARCH_WORD" "$DICTIONARY_FILE" | head -5
-        fi
-    fi
+            echo "Possible related entries:"
+            relaxed_pattern=$(create_diacritic_pattern "$SEARCH_WORD")
+            grep -i "^[[:space:]]*$relaxed_pattern" "$DICTIONARY_FILE" | head -5
 
+            # If nothing found with prefix, try substring match
+            if [ -z "$(grep -i "^[[:space:]]*$relaxed_pattern" "$DICTIONARY_FILE" | head -1)" ]; then
+                echo ""
+                echo "Or perhaps one of these entries contains your word:"
+                grep -i "^[[:space:]]*[a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ]*[[:space:]]*[,.(].*$SEARCH_WORD" "$DICTIONARY_FILE" | head -5
+            fi
+        fi
+    } | output_result
+
+    # Display the results if using a viewer
+    display_output
     exit 0
 fi
 
@@ -193,51 +247,53 @@ if [ "$CONTEXT_LINES" -gt 0 ]; then
     end_line=$((line_number + CONTEXT_LINES))
 
     # Extract the context lines
-    echo "Showing $CONTEXT_LINES lines of context around match:"
-    echo "-------------------------------------------------------------"
-    sed -n "${start_line},${end_line}p" "$DICTIONARY_FILE"
-    echo "-------------------------------------------------------------"
-    echo "Note: This is showing only a context window, not necessarily the complete entry."
+    {
+        echo "Showing $CONTEXT_LINES lines of context around match:"
+        echo "-------------------------------------------------------------"
+        sed -n "${start_line},${end_line}p" "$DICTIONARY_FILE"
+        echo "-------------------------------------------------------------"
+        echo "Note: This is showing only a context window, not necessarily the complete entry."
+    } | output_result
 else
-    # Extract the full entry using awk
-    # The pattern to detect the start of a new entry is complex - we look for lines that:
-    # 1. Start with a Latin word (letters, possibly with diacritics)
-    # 2. Followed by a comma and typical dictionary notation
-    awk -v start="$line_number" '
-        # When we reach our starting line, start capturing
-        NR == start {
-            in_entry = 1;
-            print;
-            next
-        }
-
-        # If we encounter what looks like the beginning of another entry, stop capturing
-        # This pattern looks for dictionary headwords by detecting typical entry patterns
-        in_entry && /^[a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ][a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ]*[,][ ][^,]*[,]/ {
-            # Count the number of commas to distinguish between entry starts and normal sentences
-            comma_count = gsub(/,/, ",");
-            if (comma_count >= 2) {
-                in_entry = 0;
-                exit;
+    # Extract the full entry using awk with improved logic for dictionary entries
+    {
+        awk -v start="$line_number" '
+            # When we reach our starting line, start capturing
+            NR == start {
+                in_entry = 1;
+                print;
+                next
             }
-        }
 
-        # Alternative pattern for entry detection - look for typical dictionary notations
-        in_entry && /^[a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ][a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ\-]*[ ]*(,|[.]|[(])/ {
-            # This needs to be the first character of a line
-            if (substr($0, 1, 1) ~ /[a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ]/) {
-                # But we need to avoid continuing text that happens to start with a capital
-                if (length($1) <= 12) {  # Typical dictionary headwords are not too long
-                    in_entry = 0;
-                    exit;
+            # Detect the start of a new dictionary entry by identifying headword patterns
+            in_entry && /^[[:space:]]*[a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ][a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ\-]*[[:space:]]*[,.(]/ {
+                # This needs to be the first real character of a line
+                if ($0 ~ /^[[:space:]]*[a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ]/) {
+                    # Check if this looks like a dictionary headword entry
+                    # First, get the word by removing everything after the first comma, period, etc.
+                    word = $0
+                    sub(/[[:space:]]*[,.(].*$/, "", word)
+                    # Remove leading/trailing spaces
+                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", word)
+
+                    # If the word is short enough and has no spaces, it might be a headword
+                    if (length(word) <= 15 && word !~ / /) {
+                        in_entry = 0
+                        exit
+                    }
                 }
             }
-        }
 
-        # Continue capturing lines between start and end
-        in_entry {print}
-    ' "$DICTIONARY_FILE"
+            # Continue capturing lines between start and end
+            in_entry {print}
+        ' "$DICTIONARY_FILE"
+    } | output_result
 fi
 
-echo "-------------------------------------------------------------"
-echo "Entry found in: $DICTIONARY_FILE"
+{
+    echo "-------------------------------------------------------------"
+    echo "Entry found in: $DICTIONARY_FILE"
+} | output_result
+
+# Display the results if using a viewer
+display_output
