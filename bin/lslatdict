@@ -1,21 +1,61 @@
 #!/bin/bash
 
-# lslatdict.sh - Tool to extract entries from Lewis & Short Latin Dictionary
-# Usage: ./lslatdict.sh [options] LATIN_WORD
+# lslatdict - Tool to extract entries from Lewis & Short Latin Dictionary
+# Usage: lslatdict [options] LATIN_WORD
 
 # Copyright (c) 2025, Ayman Lafaz
 # All rights reserved.
 # Licensed under the BSD 3-Clause License
 # See LICENSE file for details
 
-
-# Configuration - change this to the path of your dictionary file
+# Configuration - default dictionary file paths
+# These will be updated during installation
 DICTIONARY_FILE="lewis-short.txt"
-# DICTIONARY_FILE="lewis-short-smart-quotes.txt" # Uncomment to use the version with smart quotes
+SMART_QUOTES_FILE="lewis-short-smart-quotes.txt"
+
+# Function to find dictionary files
+find_dictionary_files() {
+    # Look in standard locations
+    standard_locations=(
+        "$DICTIONARY_FILE"                                         # Direct path (already modified by installer)
+        "$(dirname "$0")/../share/lslatdict/lewis-short.txt"       # Relative to script location
+        "/usr/local/share/lslatdict/lewis-short.txt"               # System-wide location
+        "/usr/share/lslatdict/lewis-short.txt"                     # Alternative system location
+        "$HOME/.local/share/lslatdict/lewis-short.txt"             # User's local share
+        "$HOME/.config/lslatdict/lewis-short.txt"                  # User's config dir
+        "./lewis-short.txt"                                         # Current directory
+    )
+
+    smart_locations=(
+        "$SMART_QUOTES_FILE"                                         # Direct path (already modified by installer)
+        "$(dirname "$0")/../share/lslatdict/lewis-short-smart-quotes.txt"
+        "/usr/local/share/lslatdict/lewis-short-smart-quotes.txt"
+        "/usr/share/lslatdict/lewis-short-smart-quotes.txt"
+        "$HOME/.local/share/lslatdict/lewis-short-smart-quotes.txt"
+        "$HOME/.config/lslatdict/lewis-short-smart-quotes.txt"
+        "./lewis-short-smart-quotes.txt"
+    )
+
+    # Find regular dictionary file
+    for location in "${standard_locations[@]}"; do
+        if [ -f "$location" ]; then
+            DICTIONARY_FILE="$location"
+            break
+        fi
+    done
+
+    # Find smart quotes dictionary file
+    for location in "${smart_locations[@]}"; do
+        if [ -f "$location" ]; then
+            SMART_QUOTES_FILE="$location"
+            break
+        fi
+    done
+}
 
 # Function to display usage information
 show_usage() {
-    echo "Usage: $0 [options] LATIN_WORD"
+    echo "Usage: $(basename "$0") [options] LATIN_WORD"
     echo "Extract entries from Lewis & Short Latin Dictionary"
     echo ""
     echo "Options:"
@@ -26,11 +66,20 @@ show_usage() {
     echo "  -e, --exact            Require exact match (with diacritical flexibility)"
     echo "  -S, --suggest          Show suggestions for similar words when no match is found"
     echo "  -d, --direct           Print directly to terminal (no external viewer)"
+    echo "  -v, --version          Display version information"
     echo ""
-    echo "Example: $0 zythum"
-    echo "         $0 --smart amor"
-    echo "         $0 -c 5 virtus     # Show 5 lines of context"
-    echo "         $0 -e amo          # Exact match (allows for diacritics)"
+    echo "Example: $(basename "$0") zythum"
+    echo "         $(basename "$0") --smart amor"
+    echo "         $(basename "$0") -c 5 virtus     # Show 5 lines of context"
+    echo "         $(basename "$0") -e amo          # Exact match (allows for diacritics)"
+}
+
+# Show version information
+show_version() {
+    echo "lslatdict - Lewis & Short Latin Dictionary CLI Tool"
+    echo "Version 1.0.0"
+    echo "Copyright (c) 2025, Ayman Lafaz"
+    echo "Licensed under the BSD 3-Clause License"
 }
 
 # Parse command-line arguments
@@ -46,13 +95,16 @@ while [[ $# -gt 0 ]]; do
             show_usage
             exit 0
             ;;
+        -v|--version)
+            show_version
+            exit 0
+            ;;
         -f|--file)
             DICTIONARY_FILE="$2"
             shift 2
             ;;
         -s|--smart)
             USE_SMART_QUOTES=true
-            DICTIONARY_FILE="lewis-short-smart-quotes.txt"
             shift
             ;;
         -c|--context)
@@ -71,12 +123,25 @@ while [[ $# -gt 0 ]]; do
             DIRECT_OUTPUT=true
             shift
             ;;
+        -*)
+            echo "Error: Unknown option: $1"
+            show_usage
+            exit 1
+            ;;
         *)
             SEARCH_WORD="$1"
             shift
             ;;
     esac
 done
+
+# Locate dictionary files before proceeding
+find_dictionary_files
+
+# Set the appropriate dictionary file based on user preference
+if [ "$USE_SMART_QUOTES" = true ]; then
+    DICTIONARY_FILE="$SMART_QUOTES_FILE"
+fi
 
 # Validate input
 if [ -z "$SEARCH_WORD" ]; then
@@ -87,8 +152,13 @@ fi
 
 if [ ! -f "$DICTIONARY_FILE" ]; then
     echo "Error: Dictionary file '$DICTIONARY_FILE' not found!"
-    echo "Make sure you're running this script from the directory containing the dictionary file,"
+    echo "Make sure you're running this script from the correct directory,"
     echo "or specify the correct path with the -f option."
+    echo ""
+    echo "The script looked in these locations:"
+    echo "- Current directory"
+    echo "- System directories (/usr/local/share/lslatdict, /usr/share/lslatdict)"
+    echo "- User directories (~/.local/share/lslatdict, ~/.config/lslatdict)"
     exit 1
 fi
 
@@ -115,7 +185,7 @@ output_result() {
 display_output() {
     if [ "$DIRECT_OUTPUT" = false ] && [ -s "$TEMP_FILE" ]; then
         # Display the content using less
-        less "$TEMP_FILE"
+        less -R "$TEMP_FILE"
     fi
 }
 

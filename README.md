@@ -2,15 +2,15 @@
 
 ## What?
 
-This repo is a fork of [plaintext-lewis-short](https://github.com/josephholsten/plaintext-lewis-short) that adds a command-line interface for looking up entries in the dictionary.
-
-It contains:
+This repository contains:
 
 1. Two plain text versions of *A Latin Dictionary* (edd. Charlton T. Lewis and Charles Short):
    - `lewis-short.txt`: Standard version with straight quotes
    - `lewis-short-smart-quotes.txt`: Version with curly quotes
 
-2. A command-line tool (`lslatdict.sh`) for quickly looking up Latin words in the dictionary
+2. A command-line tool (`lslatdict`) for quickly looking up Latin words in the dictionary
+
+3. Easy installation options via `Makefile` or installation script
 
 These files are based on the XML version that [the Perseus Digital Library](http://www.perseus.tufts.edu/hopper/) has [made available under a Creative-Commons license](https://github.com/PerseusDL/lexica/tree/master/CTS_XML_TEI/perseus/pdllex/lat/ls).
 
@@ -18,22 +18,61 @@ These files are based on the XML version that [the Perseus Digital Library](http
 
 The Lewis & Short Latin Dictionary is a valuable resource for Latin scholars, students, and enthusiasts. While it's available online in various formats, this project makes it accessible as plain text with a convenient command-line interface. The CLI tool makes it easy to quickly look up words without opening a web browser or large application.
 
-## Command Line Tool: lslatdict.sh
+## Installation
 
-### Installation
+### Method 1: Using Make (Recommended)
+
+```bash
+# Install system-wide (requires sudo)
+make install
+
+# OR install for current user only (no sudo required)
+make user-install
+
+# To uninstall
+make uninstall      # System-wide
+make user-uninstall # User installation
+```
+
+### Method 2: Using the Installation Script
+
+```bash
+# System-wide installation (requires sudo)
+./install.sh
+
+# User-only installation (no sudo required)
+./install.sh --user
+
+# For more options
+./install.sh --help
+```
+
+### Method 3: Manual Installation
 
 ```bash
 # Make the script executable
-chmod +x lslatdict.sh
+chmod +x bin/lslatdict
 
-# Optional: Install system-wide
-sudo cp lslatdict.sh /usr/local/bin/lslatdict
+# Copy the script to your bin directory
+cp bin/lslatdict ~/bin/
+# or system-wide
+sudo cp bin/lslatdict /usr/local/bin/
+
+# Create a directory for the dictionary files
+mkdir -p ~/.local/share/lslatdict
+# or system-wide
+sudo mkdir -p /usr/local/share/lslatdict
+
+# Copy the dictionary files
+cp data/lewis-short*.txt ~/.local/share/lslatdict/
+# or system-wide
+sudo cp data/lewis-short*.txt /usr/local/share/lslatdict/
 ```
 
-### Usage
+## Usage
 
 ```
-Usage: ./lslatdict.sh [options] LATIN_WORD
+Usage: lslatdict [options] LATIN_WORD
 Extract entries from Lewis & Short Latin Dictionary
 
 Options:
@@ -43,28 +82,33 @@ Options:
   -c, --context LINES    Show LINES of context before and after the match
   -e, --exact            Require exact match (with diacritical flexibility)
   -S, --suggest          Show suggestions for similar words when no match is found
+  -d, --direct           Print directly to terminal (no external viewer)
+  -v, --version          Display version information
 ```
 
 ### Examples
 
 ```bash
 # Basic lookup
-./lslatdict.sh amor
+lslatdict amor
 
 # Use smart quotes version
-./lslatdict.sh --smart virtus
+lslatdict --smart virtus
 
 # Show 5 lines of context around the entry
-./lslatdict.sh -c 5 virtus
+lslatdict -c 5 virtus
 
 # Exact match (still handles diacritical marks)
-./lslatdict.sh -e amo
+lslatdict -e amo
 
 # Get suggestions for similar words
-./lslatdict.sh -S faci
+lslatdict -S faci
+
+# Print directly to terminal (no pager)
+lslatdict -d amor
 ```
 
-### Features
+## Features
 
 - **Fast lookup**: Quickly find dictionary entries by headword
 - **Diacritical marks support**: Find entries regardless of macrons, breves, etc.
@@ -72,6 +116,24 @@ Options:
 - **Context view**: See surrounding entries for better browsing
 - **Suggestions**: Get related entries when no exact match is found
 - **Flexible matching**: Find words even with alternative spellings or forms
+
+## Project Structure
+
+```
+.
+├── bin/                    # Executable scripts
+│   └── lslatdict           # Main dictionary lookup tool
+├── data/                   # Dictionary data files
+│   ├── lewis-short.txt
+│   └── lewis-short-smart-quotes.txt
+├── scripts/                # Utility scripts
+│   ├── parse-ls-xml.py     # XML to text conversion script
+│   └── sed_commands.txt    # Commands used in text conversion
+├── install.sh              # Installation script
+├── LICENSE                 # BSD 3-Clause License
+├── Makefile                # For easy installation management
+└── README.md               # This file
+```
 
 ## About the Dictionary Files
 
@@ -86,7 +148,7 @@ Both files contain Unicode Greek characters rather than Beta code, making them m
 
 The original project used [a tool provided by PerseusDL](https://github.com/PerseusDL/tei-conversion-tools) to transform the beta code in the XML file into unicode Greek and a set of `sed` commands to transform all of the remaining character entities into unicode. The content was then extracted using a Python script.
 
-The CLI tool (`lslatdict.sh`) is a Bash script that:
+The CLI tool (`lslatdict`) is a Bash script that:
 
 1. Searches for Latin words in the dictionary text files
 2. Handles Latin diacritical marks intelligently
