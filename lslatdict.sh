@@ -3,6 +3,12 @@
 # lslatdict.sh - Tool to extract entries from Lewis & Short Latin Dictionary
 # Usage: ./lslatdict.sh [options] LATIN_WORD
 
+# Copyright (c) 2025, Ayman Lafaz
+# All rights reserved.
+# Licensed under the BSD 3-Clause License
+# See LICENSE file for details
+
+
 # Configuration - change this to the path of your dictionary file
 DICTIONARY_FILE="lewis-short.txt"
 # DICTIONARY_FILE="lewis-short-smart-quotes.txt" # Uncomment to use the version with smart quotes
