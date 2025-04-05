@@ -18,7 +18,7 @@ A command-line interface for looking up words in classical Latin and Greek dicti
 
 ### Method 1: Using `Makefile`
 
-```bash
+```
 make install-all   # Install both dictionaries system-wide
 make install-greek # Install Greek dictionary
 make install       # Install Latin dictionary
@@ -30,14 +30,14 @@ make user-install        # Install Latin for current user
 
 ### Method 2: Using the Installation Script
 
-```bash
+```
 ./install.sh --all       # System-wide installation of both dictionaries
 ./install.sh --user --all # User-only installation of both dictionaries
 ```
 
 ## Usage
 
-```bash
+```
 Usage: classdict [options] WORD
 Extract entries from Latin and Greek dictionaries
 
@@ -55,7 +55,7 @@ Extract entries from Latin and Greek dictionaries
 
 ### Examples
 
-```bash
+```
 classidict amor        # Lookup Latin word
 classidict λόγος       # Lookup Greek word
 classidict --latin virtus
@@ -92,7 +92,7 @@ Currently the Ancient Greek LSJ dictionary is not well-parsed as I would have li
 3. Place them in `data/greek/lsj.txt`.
 4. Install using:
 
-```bash
+```
 make install-all       # For system-wide installation
 make user-install-all  # For user-only installation
 ```
