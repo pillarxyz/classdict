@@ -1,33 +1,52 @@
-# *A Latin Dictionary* (edd. Lewis & Short) with Command Line Interface
+# Classical Language Dictionary CLI
+
+A command-line interface for classical language dictionaries:
+
+- **Latin**: Lewis & Short Latin Dictionary
+- **Greek**: Liddell-Scott-Jones Greek Lexicon
 
 ## What?
 
 This repository contains:
 
-1. Two plain text versions of *A Latin Dictionary* (edd. Charlton T. Lewis and Charles Short):
-   - `lewis-short.txt`: Standard version with straight quotes
-   - `lewis-short-smart-quotes.txt`: Version with curly quotes
+1. Plain text versions of classical language dictionaries:
+   - **Latin**: Lewis & Short Latin Dictionary
+     - `lewis-short.txt`
+   - **Greek**: Liddell-Scott-Jones Greek Lexicon
+     - `lsj.txt`
 
-2. A command-line tool (`lslatdict`) for quickly looking up Latin words in the dictionary
+2. A command-line tool (`classidict`) for quickly looking up words in these dictionaries
 
 3. Easy installation options via `Makefile` or installation script
 
-These files are based on the XML version that [the Perseus Digital Library](http://www.perseus.tufts.edu/hopper/) has [made available under a Creative-Commons license](https://github.com/PerseusDL/lexica/tree/master/CTS_XML_TEI/perseus/pdllex/lat/ls).
+The dictionary files are based on the XML versions from [the Perseus Digital Library](http://www.perseus.tufts.edu/hopper/) made available under a Creative-Commons license.
 
 ## Why?
 
-The Lewis & Short Latin Dictionary is a valuable resource for Latin scholars, students, and enthusiasts. While it's available online in various formats, this project makes it accessible as plain text with a convenient command-line interface. The CLI tool makes it easy to quickly look up words without opening a web browser or large application.
+Classical language dictionaries are valuable resources for scholars, students, and enthusiasts. While they're available online in various formats, this project makes them accessible as plain text with a convenient command-line interface. The CLI tool makes it easy to quickly look up words without opening a web browser or large application.
 
 ## Installation
 
 ### Method 1: Using Make (Recommended)
 
 ```bash
-# Install system-wide (requires sudo)
+# Install Latin dictionary system-wide (requires sudo)
 make install
 
-# OR install for current user only (no sudo required)
+# Install Greek dictionary system-wide (requires sudo)
+make install-greek
+
+# Install both dictionaries system-wide (requires sudo)
+make install-all
+
+# Install Latin dictionary for current user only (no sudo required)
 make user-install
+
+# Install Greek dictionary for current user only (no sudo required)
+make user-install-greek
+
+# Install both dictionaries for current user only (no sudo required)
+make user-install-all
 
 # To uninstall
 make uninstall      # System-wide
@@ -37,81 +56,76 @@ make user-uninstall # User installation
 ### Method 2: Using the Installation Script
 
 ```bash
-# System-wide installation (requires sudo)
-./install.sh
+# System-wide installation of Latin dictionary (requires sudo)
+./install.sh --latin
 
-# User-only installation (no sudo required)
-./install.sh --user
+# System-wide installation of Greek dictionary (requires sudo)
+./install.sh --greek
+
+# System-wide installation of both dictionaries (requires sudo)
+./install.sh --all
+
+# User-only installation of Latin dictionary (no sudo required)
+./install.sh --user --latin
+
+# User-only installation of Greek dictionary (no sudo required)
+./install.sh --user --greek
+
+# User-only installation of both dictionaries (no sudo required)
+./install.sh --user --all
 
 # For more options
 ./install.sh --help
 ```
 
-### Method 3: Manual Installation
-
-```bash
-# Make the script executable
-chmod +x bin/lslatdict
-
-# Copy the script to your bin directory
-cp bin/lslatdict ~/bin/
-# or system-wide
-sudo cp bin/lslatdict /usr/local/bin/
-
-# Create a directory for the dictionary files
-mkdir -p ~/.local/share/lslatdict
-# or system-wide
-sudo mkdir -p /usr/local/share/lslatdict
-
-# Copy the dictionary files
-cp data/lewis-short*.txt ~/.local/share/lslatdict/
-# or system-wide
-sudo cp data/lewis-short*.txt /usr/local/share/lslatdict/
-```
-
 ## Usage
 
 ```
-Usage: lslatdict [options] LATIN_WORD
-Extract entries from Lewis & Short Latin Dictionary
+Usage: classidict [options] WORD
+Extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries
 
 Options:
   -h, --help             Show this help message
   -f, --file FILE        Specify a different dictionary file path
-  -s, --smart            Use the smart-quotes version of the dictionary
   -c, --context LINES    Show LINES of context before and after the match
   -e, --exact            Require exact match (with diacritical flexibility)
   -S, --suggest          Show suggestions for similar words when no match is found
   -d, --direct           Print directly to terminal (no external viewer)
   -v, --version          Display version information
+  -l, --latin            Force Latin dictionary mode
+  -g, --greek            Force Greek dictionary mode
 ```
 
 ### Examples
 
 ```bash
-# Basic lookup
-lslatdict amor
+# Basic lookup (auto-detects language)
+classidict amor        # Latin word
+classidict λόγος      # Greek word
 
-# Use smart quotes version
-lslatdict --smart virtus
+# Force specific dictionary
+classidict --latin virtus
+classidict --greek ἀρετή
 
 # Show 5 lines of context around the entry
-lslatdict -c 5 virtus
+classidict -c 5 virtus
 
 # Exact match (still handles diacritical marks)
-lslatdict -e amo
+classidict -e amo
 
 # Get suggestions for similar words
-lslatdict -S faci
+classidict -S faci
 
 # Print directly to terminal (no pager)
-lslatdict -d amor
+classidict -d amor
 ```
 
 ## Features
 
+- **Multilingual support**: Look up words in both Latin and Greek dictionaries
+- **Automatic language detection**: Detects whether to use Latin or Greek dictionary based on characters used
 - **Fast lookup**: Quickly find dictionary entries by headword
-- **Diacritical marks support**: Find entries regardless of macrons, breves, etc.
+- **Diacritical marks support**: Find entries regardless of diacritics
 - **Smart quotes option**: Choose between straight quotes and curly quotes
 - **Context view**: See surrounding entries for better browsing
 - **Suggestions**: Get related entries when no exact match is found
@@ -122,12 +136,14 @@ lslatdict -d amor
 ```
 .
 ├── bin/                    # Executable scripts
-│   └── lslatdict           # Main dictionary lookup tool
+│   └── classidict              # Main dictionary lookup tool
 ├── data/                   # Dictionary data files
-│   ├── lewis-short.txt
-│   └── lewis-short-smart-quotes.txt
+│   ├── latin/              # Latin dictionary files
+│   │   ├── lewis-short.txt
+│   └── greek/              # Greek dictionary files
+│       ├── lsj.txt
 ├── scripts/                # Utility scripts
-│   ├── parse-ls-xml.py     # XML to text conversion script
+│   ├── parse-ls-xml.py     # XML to text conversion script for Latin
 │   └── sed_commands.txt    # Commands used in text conversion
 ├── install.sh              # Installation script
 ├── LICENSE                 # BSD 3-Clause License
@@ -135,33 +151,43 @@ lslatdict -d amor
 └── README.md               # This file
 ```
 
-## About the Dictionary Files
+## Adding the LSJ Greek Dictionary
 
-The two dictionary files are identical except for quote formatting:
+To add the LSJ Greek Dictionary to this project:
 
-- `lewis-short.txt`: Uses straight quotes (faster processing)
-- `lewis-short-smart-quotes.txt`: Uses curly quotes (better typography)
+1. Obtain the Liddell-Scott-Jones plain text files
+   - These may be available from the Perseus Digital Library or other academic sources
+   - You may need to convert from XML or other formats if plain text isn't directly available
 
-Both files contain Unicode Greek characters rather than Beta code, making them more readable and useful for scholars.
+2. Place the files in the correct location:
+   ```
+   data/greek/lsj.txt
+   ```
+
+3. Install using the updated installation options:
+   ```bash
+   make install-all       # For system-wide installation
+   # OR
+   make user-install-all  # For user-only installation
+   ```
 
 ## Technical Details
 
-The original project used [a tool provided by PerseusDL](https://github.com/PerseusDL/tei-conversion-tools) to transform the beta code in the XML file into unicode Greek and a set of `sed` commands to transform all of the remaining character entities into unicode. The content was then extracted using a Python script.
+The dictionaries were originally converted from XML versions using conversion tools. The CLI tool (`classidict`) is a Bash script that:
 
-The CLI tool (`lslatdict`) is a Bash script that:
-
-1. Searches for Latin words in the dictionary text files
-2. Handles Latin diacritical marks intelligently
-3. Extracts complete entries or context windows
-4. Provides suggestions for related entries
+1. Detects whether the query is Latin or Greek (or allows manual specification)
+2. Searches for words in the appropriate dictionary files
+3. Handles diacritical marks intelligently for both languages
+4. Extracts complete entries or context windows
+5. Provides suggestions for related entries
 
 ## Credits
 
-- Original dictionary text provided by Perseus Digital Library, with funding from The National Endowment for the Humanities
-- Original plain text conversion by [Joseph Holsten](https://github.com/josephholsten)
-- CLI tool developed as an extension to the original project
+- Original dictionary texts provided by Perseus Digital Library, with funding from The National Endowment for the Humanities
+- Original Latin plain text conversion by [Joseph Holsten](https://github.com/josephholsten)
+- CLI tool and Greek integration developed as an extension to the original project
 
 ## License
 
-- The Lewis and Short text files are licensed under [the CC BY-SA 3.0 license](https://creativecommons.org/licenses/by-sa/3.0/us/)
+- The dictionary text files are licensed under [the CC BY-SA 3.0 license](https://creativecommons.org/licenses/by-sa/3.0/us/)
 - The Python script, `sed` commands, and CLI tool are licensed under [the BSD 3-Clause license](https://opensource.org/licenses/BSD-3-Clause)

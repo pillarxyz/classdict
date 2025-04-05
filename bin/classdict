@@ -1,0 +1,506 @@
+#!/bin/bash
+
+# lsdict - Tool to extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries
+# Usage: lsdict [options] WORD
+
+# Copyright (c) 2025, Ayman Lafaz
+# All rights reserved.
+# Licensed under the BSD 3-Clause License
+# See LICENSE file for details
+
+# Configuration - default dictionary file paths
+# These will be updated during installation
+LANG_MODE="auto"  # auto, latin, or greek
+
+# Latin dictionaries
+LAT_DICT_FILE="data/latin/lewis-short.txt"
+
+# Greek dictionaries
+GRK_DICT_FILE="data/greek/lsj.txt"
+
+# Active dictionary (will be set based on options)
+DICTIONARY_FILE=""
+
+# Version information
+VERSION="1.1.0"
+SCRIPT_NAME=$(basename "$0")
+
+# Function to find dictionary files
+find_dictionary_files() {
+    # Look in standard locations for Latin dictionaries
+    latin_std_locations=(
+        "$LAT_DICT_FILE"                                         # Direct path (already modified by installer)
+        "$(dirname "$0")/../share/lsdict/latin/lewis-short.txt"  # Relative to script location
+        "/usr/local/share/lsdict/latin/lewis-short.txt"          # System-wide location
+        "/usr/share/lsdict/latin/lewis-short.txt"                # Alternative system location
+        "$HOME/.local/share/lsdict/latin/lewis-short.txt"        # User's local share
+        "$HOME/.config/lsdict/latin/lewis-short.txt"             # User's config dir
+        "./data/latin/lewis-short.txt"                           # Project directory
+        "./lewis-short.txt"                                       # Current directory
+    )
+
+
+    # Look in standard locations for Greek dictionaries
+    greek_std_locations=(
+        "$GRK_DICT_FILE"                                         # Direct path
+        "$(dirname "$0")/../share/lsdict/greek/lsj.txt"          # Relative to script location
+        "/usr/local/share/lsdict/greek/lsj.txt"                  # System-wide location
+        "/usr/share/lsdict/greek/lsj.txt"                        # Alternative system location
+        "$HOME/.local/share/lsdict/greek/lsj.txt"                # User's local share
+        "$HOME/.config/lsdict/greek/lsj.txt"                     # User's config dir
+        "./data/greek/lsj.txt"                                   # Project directory
+        "./lsj.txt"                                               # Current directory
+    )
+
+    # Find Latin dictionary files
+    for location in "${latin_std_locations[@]}"; do
+        if [ -f "$location" ]; then
+            LAT_DICT_FILE="$location"
+            break
+        fi
+    done
+
+        # Find Greek dictionary files
+    for location in "${greek_std_locations[@]}"; do
+        if [ -f "$location" ]; then
+            GRK_DICT_FILE="$location"
+            break
+        fi
+    done
+    }
+
+# Auto-detect if a word is Greek or Latin
+detect_language() {
+    local word="$1"
+
+    # Check if word contains Greek characters
+    if echo "$word" | grep -q '[αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ]'; then
+        echo "greek"
+    else
+        # Default to Latin if no Greek characters
+        echo "latin"
+    fi
+}
+
+# Function to display usage information
+show_usage() {
+    echo "Usage: $SCRIPT_NAME [options] WORD"
+    echo "Extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help             Show this help message"
+    echo "  -f, --file FILE        Specify a different dictionary file path"
+    echo "  -c, --context LINES    Show LINES of context before and after the match"
+    echo "  -e, --exact            Require exact match (with diacritical flexibility)"
+    echo "  -S, --suggest          Show suggestions for similar words when no match is found"
+    echo "  -d, --direct           Print directly to terminal (no external viewer)"
+    echo "  -v, --version          Display version information"
+    echo "  -l, --latin            Force Latin dictionary mode"
+    echo "  -g, --greek            Force Greek dictionary mode"
+    echo ""
+    echo "Examples:"
+    echo "  $SCRIPT_NAME amor                # Latin word lookup"
+    echo "  $SCRIPT_NAME λόγος              # Greek word lookup"
+    echo "  $SCRIPT_NAME --latin virtus     # Force Latin dictionary"
+    echo "  $SCRIPT_NAME --greek ἀρετή      # Force Greek dictionary"
+    echo "  $SCRIPT_NAME -c 5 virtus        # Show 5 lines of context"
+    echo "  $SCRIPT_NAME -e amo             # Exact match (allows for diacritics)"
+}
+
+# Show version information
+show_version() {
+    echo "$SCRIPT_NAME - Latin/Greek Dictionary CLI Tool"
+    echo "Version $VERSION"
+    echo "Copyright (c) 2025, Ayman Lafaz"
+    echo "Licensed under the BSD 3-Clause License"
+}
+
+# Parse command-line arguments
+CONTEXT_LINES=0
+EXACT_MATCH=false
+SUGGEST=false
+DIRECT_OUTPUT=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_usage
+            exit 0
+            ;;
+        -v|--version)
+            show_version
+            exit 0
+            ;;
+        -f|--file)
+            CUSTOM_DICT_FILE="$2"
+            shift 2
+            ;;
+        -c|--context)
+            CONTEXT_LINES="$2"
+            shift 2
+            ;;
+        -e|--exact)
+            EXACT_MATCH=true
+            shift
+            ;;
+        -S|--suggest)
+            SUGGEST=true
+            shift
+            ;;
+        -d|--direct)
+            DIRECT_OUTPUT=true
+            shift
+            ;;
+        -l|--latin)
+            LANG_MODE="latin"
+            shift
+            ;;
+        -g|--greek)
+            LANG_MODE="greek"
+            shift
+            ;;
+        -*)
+            echo "Error: Unknown option: $1"
+            show_usage
+            exit 1
+            ;;
+        *)
+            SEARCH_WORD="$1"
+            shift
+            ;;
+    esac
+done
+
+# Validate input
+if [ -z "$SEARCH_WORD" ]; then
+    echo "Error: No word specified!"
+    show_usage
+    exit 1
+fi
+# Locate dictionary files
+find_dictionary_files
+
+# Detect language if in auto mode
+if [ "$LANG_MODE" = "auto" ]; then
+    LANG_MODE=$(detect_language "$SEARCH_WORD")
+fi
+
+# Set appropriate dictionary file based on language
+if [ "$LANG_MODE" = "latin" ]; then
+    DICTIONARY_FILE="$LAT_DICT_FILE"
+    DICT_NAME="Lewis & Short Latin Dictionary"
+elif [ "$LANG_MODE" = "greek" ]; then
+    DICTIONARY_FILE="$GRK_DICT_FILE"
+    DICT_NAME="Liddell-Scott-Jones Greek Dictionary"
+else
+    echo "Error: Unknown language mode: $LANG_MODE"
+    exit 1
+fi
+
+# Use custom dictionary file if specified
+if [ -n "$CUSTOM_DICT_FILE" ]; then
+    DICTIONARY_FILE="$CUSTOM_DICT_FILE"
+fi
+
+if [ ! -f "$DICTIONARY_FILE" ]; then
+    echo "Error: Dictionary file '$DICTIONARY_FILE' not found!"
+    echo "Make sure you're running this script from the correct directory,"
+    echo "or specify the correct path with the -f option."
+    echo ""
+    echo "For $LANG_MODE dictionary, the script looked in these locations:"
+    if [ "$LANG_MODE" = "latin" ]; then
+        for location in "${latin_std_locations[@]}"; do
+            echo "- $location"
+        done
+    else
+        for location in "${greek_std_locations[@]}"; do
+            echo "- $location"
+        done
+    fi
+    exit 1
+fi
+
+# Check if less exists
+check_viewer() {
+    if ! command -v "less" &> /dev/null; then
+        echo "Warning: less not found. Falling back to direct output."
+        DIRECT_OUTPUT=true
+    fi
+}
+
+# Create a function to handle output to either temp file or terminal
+output_result() {
+    if [ "$DIRECT_OUTPUT" = true ]; then
+        cat -
+    else
+        cat - >> "$TEMP_FILE"
+    fi
+}
+
+# Function to display output in less
+display_output() {
+    if [ "$DIRECT_OUTPUT" = false ] && [ -s "$TEMP_FILE" ]; then
+        # Display the content using less
+        less -R "$TEMP_FILE"
+    fi
+}
+
+# Set up output method
+if [ "$DIRECT_OUTPUT" = false ]; then
+    # Create a temporary file that will persist until script ends
+    TEMP_FILE=$(mktemp /tmp/lsdict.XXXXXX)
+
+    # Set up trap to clean up on exit
+    trap 'rm -f "$TEMP_FILE"' EXIT
+
+    check_viewer
+
+    # Print to terminal that we're searching
+    echo "Searching for '$SEARCH_WORD' in $DICT_NAME..."
+fi
+
+# Start building output
+{
+    echo "Searching for '$SEARCH_WORD' in $DICT_NAME..."
+    echo "-------------------------------------------------------------"
+} | output_result
+
+# Create a diacritical-flexible pattern for Latin characters
+create_latin_diacritic_pattern() {
+    local input="$1"
+    local pattern=""
+    for (( i=0; i<${#input}; i++ )); do
+        char="${input:$i:1}"
+        case "$char" in
+            [aA]) pattern+="[aAāăäÄ]" ;;
+            [eE]) pattern+="[eEēĕëË]" ;;
+            [iI]) pattern+="[iIīĭïÏ]" ;;
+            [oO]) pattern+="[oOōŏöÖ]" ;;
+            [uU]) pattern+="[uUūŭüÜ]" ;;
+            [yY]) pattern+="[yYȳÿŸ]" ;;
+            *) pattern+="$char" ;;
+        esac
+    done
+    echo "$pattern"
+}
+
+# Create a diacritical-flexible pattern for Greek characters
+create_greek_diacritic_pattern() {
+    local input="$1"
+    local pattern=""
+    for (( i=0; i<${#input}; i++ )); do
+        char="${input:$i:1}"
+        case "$char" in
+            α) pattern+="[αἀἁἂἃἄἅἆἇὰάᾀᾁᾂᾃᾄᾅᾆᾇᾰᾱᾲᾳᾴᾶᾷ]" ;;
+            ε) pattern+="[εἐἑἒἓἔἕὲέ]" ;;
+            η) pattern+="[ηἠἡἢἣἤἥἦἧὴήᾐᾑᾒᾓᾔᾕᾖᾗῂῃῄῆῇ]" ;;
+            ι) pattern+="[ιἰἱἲἳἴἵἶἷὶίῐῑῒΐῖῗ]" ;;
+            ο) pattern+="[οὀὁὂὃὄὅὸό]" ;;
+            υ) pattern+="[υὐὑὒὓὔὕὖὗὺύῠῡῢΰῦῧ]" ;;
+            ω) pattern+="[ωὠὡὢὣὤὥὦὧὼώᾠᾡᾢᾣᾤᾥᾦᾧῲῳῴῶῷ]" ;;
+            [αεηιουω]) pattern+="[${char}]" ;; # Keep simpler for any already matched
+            *) pattern+="$char" ;;
+        esac
+    done
+    echo "$pattern"
+}
+
+# Create appropriate diacritical pattern based on language
+create_diacritic_pattern() {
+    local input="$1"
+
+    if [ "$LANG_MODE" = "latin" ]; then
+        create_latin_diacritic_pattern "$input"
+    else
+        create_greek_diacritic_pattern "$input"
+    fi
+}
+
+# Function to search for the entry with language-specific patterns
+find_headword() {
+    local search_word="$1"
+    local line_number=""
+
+    # Different search patterns based on language
+    if [ "$LANG_MODE" = "latin" ]; then
+        # Latin search patterns - similar to original but with improvements
+
+        # First attempt: try to find the exact word as a headword with a clear boundary
+        pattern="^[[:space:]]*$search_word[[:space:]]*[,.(]"
+        line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+
+        # If not found, try with diacritical flexibility
+        if [ -z "$line_number" ]; then
+            relaxed_pattern=$(create_diacritic_pattern "$search_word")
+            pattern="^[[:space:]]*$relaxed_pattern[[:space:]]*[,.(]"
+            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+        fi
+
+        # If still not found and not in exact match mode, try more flexible approaches
+        if [ -z "$line_number" ] && [ "$EXACT_MATCH" != true ]; then
+            # Try looking for common entry patterns like "ămo, āvi, ātum"
+            pattern="^[[:space:]]*[ăāĕēĭīŏōŭū]?$search_word[[:space:]]*[,]"
+            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+
+            # Try with diacritical flexibility
+            if [ -z "$line_number" ]; then
+                relaxed_pattern=$(create_diacritic_pattern "$search_word")
+                pattern="^[[:space:]]*[ăāĕēĭīŏōŭū]?$relaxed_pattern[[:space:]]*[,]"
+                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+            fi
+
+            # Try looking for the word as part of a hyphenated or compound term at the start of entry
+            if [ -z "$line_number" ] && [ ${#search_word} -gt 2 ]; then
+                relaxed_pattern=$(create_diacritic_pattern "$search_word")
+                pattern="^[[:space:]]*[^-]*$relaxed_pattern[^-]*[[:space:]]*[,.(]"
+                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+            fi
+
+            # Try removing the last character (for declined/conjugated forms)
+            if [ -z "$line_number" ] && [ ${#search_word} -gt 2 ]; then
+                stem="${search_word%?}"
+                stem_pattern=$(create_diacritic_pattern "$stem")
+                pattern="^[[:space:]]*$stem_pattern[[:alpha:]]*[[:space:]]*[,.(]"
+                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+            fi
+        fi
+    else
+        # Greek search patterns - adapted for Greek dictionary format
+
+        # First attempt: try to find the exact word as a headword
+        pattern="^[[:space:]]*$search_word[[:space:]]*[,.(]"
+        line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+
+        # If not found, try with diacritical flexibility
+        if [ -z "$line_number" ]; then
+            relaxed_pattern=$(create_diacritic_pattern "$search_word")
+            pattern="^[[:space:]]*$relaxed_pattern[[:space:]]*[,.(]"
+            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+        fi
+
+        # Try special patterns for Greek entries
+        if [ -z "$line_number" ] && [ "$EXACT_MATCH" != true ]; then
+            # Try looking for word with asterisk (common in LSJ)
+            pattern="^[[:space:]]*\\*$search_word[[:space:]]*[,.(]"
+            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+
+            # Try with diacritical flexibility
+            if [ -z "$line_number" ]; then
+                relaxed_pattern=$(create_diacritic_pattern "$search_word")
+                pattern="^[[:space:]]*\\*$relaxed_pattern[[:space:]]*[,.(]"
+                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+            fi
+
+            # Try removing the last character (for declined/conjugated forms)
+            if [ -z "$line_number" ] && [ ${#search_word} -gt 2 ]; then
+                stem="${search_word%?}"
+                stem_pattern=$(create_diacritic_pattern "$stem")
+                pattern="^[[:space:]]*$stem_pattern[[:alpha:]]*[[:space:]]*[,.(]"
+                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+            fi
+        fi
+    fi
+
+    echo "$line_number"
+}
+
+# Find the headword entry
+line_number=$(find_headword "$SEARCH_WORD")
+
+# If we still haven't found the word, try to provide suggestions if enabled
+if [ -z "$line_number" ]; then
+    {
+        echo "No entry found for '$SEARCH_WORD'."
+        echo "Try checking the spelling or searching for a different form of the word."
+
+        if [ "$SUGGEST" = true ]; then
+            echo ""
+            echo "Possible related entries:"
+            relaxed_pattern=$(create_diacritic_pattern "$SEARCH_WORD")
+            grep -i "^[[:space:]]*$relaxed_pattern" "$DICTIONARY_FILE" | head -5
+
+            # If nothing found with prefix, try substring match
+            if [ -z "$(grep -i "^[[:space:]]*$relaxed_pattern" "$DICTIONARY_FILE" | head -1)" ]; then
+                echo ""
+                echo "Or perhaps one of these entries contains your word:"
+                if [ "$LANG_MODE" = "latin" ]; then
+                    chars="a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ"
+                else
+                    chars="α-ωΑ-Ωἀ-ᾯᾰ-ᾼῂ-ῼ"
+                fi
+                grep -i "^[[:space:]]*[$chars]*[[:space:]]*[,.(].*$SEARCH_WORD" "$DICTIONARY_FILE" | head -5
+            fi
+        fi
+    } | output_result
+
+    # Display the results if using a viewer
+    display_output
+    exit 0
+fi
+
+# If we're using context mode, display specified number of lines around the match
+if [ "$CONTEXT_LINES" -gt 0 ]; then
+    # Calculate the start line, ensuring it's not less than 1
+    start_line=$((line_number - CONTEXT_LINES))
+    [ "$start_line" -lt 1 ] && start_line=1
+
+    # Calculate the end line
+    end_line=$((line_number + CONTEXT_LINES))
+
+    # Extract the context lines
+    {
+        echo "Showing $CONTEXT_LINES lines of context around match:"
+        echo "-------------------------------------------------------------"
+        sed -n "${start_line},${end_line}p" "$DICTIONARY_FILE"
+        echo "-------------------------------------------------------------"
+        echo "Note: This is showing only a context window, not necessarily the complete entry."
+    } | output_result
+else
+    # Extract the full entry using awk with improved logic for dictionary entries
+    {
+        if [ "$LANG_MODE" = "latin" ]; then
+            chars="a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ"
+        else
+            chars="α-ωΑ-Ωἀ-ᾯᾰ-ᾼῂ-ῼ"
+        fi
+
+        awk -v start="$line_number" -v chars="$chars" '
+            # When we reach our starting line, start capturing
+            NR == start {
+                in_entry = 1;
+                print;
+                next
+            }
+
+            # Detect the start of a new dictionary entry by identifying headword patterns
+            in_entry && $0 ~ "^[[:space:]]*[" chars "][" chars "\\-]*[[:space:]]*[,.(]" {
+                # This needs to be the first real character of a line
+                if ($0 ~ "^[[:space:]]*[" chars "\\*]") {
+                    # Check if this looks like a dictionary headword entry
+                    # First, get the word by removing everything after the first comma, period, etc.
+                    word = $0
+                    sub(/[[:space:]]*[,.(].*$/, "", word)
+                    # Remove leading/trailing spaces
+                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", word)
+
+                    # If the word is short enough and has no spaces, it might be a headword
+                    if (length(word) <= 20 && word !~ / /) {
+                        in_entry = 0
+                        exit
+                    }
+                }
+            }
+
+            # Continue capturing lines between start and end
+            in_entry {print}
+        ' "$DICTIONARY_FILE"
+    } | output_result
+fi
+
+{
+    echo "-------------------------------------------------------------"
+    echo "Entry found in: $DICTIONARY_FILE"
+} | output_result
+
+# Display the results if using a viewer
+display_output
