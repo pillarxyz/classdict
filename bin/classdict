@@ -87,12 +87,12 @@ show_usage() {
     echo "Usage: $SCRIPT_NAME [options] WORD"
     echo "Extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries"
     echo ""
-    echo "Options:"
     echo "  -h, --help             Show this help message"
     echo "  -f, --file FILE        Specify a different dictionary file path"
     echo "  -c, --context LINES    Show LINES of context before and after the match"
     echo "  -e, --exact            Require exact match (with diacritical flexibility)"
     echo "  -S, --suggest          Show suggestions for similar words when no match is found"
+    echo "  -L, --lemmatize        Replaces the word with its lemma and then searches for it"
     echo "  -d, --direct           Print directly to terminal (no external viewer)"
     echo "  -v, --version          Display version information"
     echo "  -l, --latin            Force Latin dictionary mode"
@@ -120,6 +120,7 @@ CONTEXT_LINES=0
 EXACT_MATCH=false
 SUGGEST=false
 DIRECT_OUTPUT=false
+LEMMATIZE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -145,6 +146,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -S|--suggest)
             SUGGEST=true
+            shift
+            ;;
+	-L|--lemmatize)
+            LEMMATIZE=true
             shift
             ;;
         -d|--direct)
@@ -177,12 +182,21 @@ if [ -z "$SEARCH_WORD" ]; then
     show_usage
     exit 1
 fi
+
 # Locate dictionary files
 find_dictionary_files
 
 # Detect language if in auto mode
 if [ "$LANG_MODE" = "auto" ]; then
     LANG_MODE=$(detect_language "$SEARCH_WORD")
+fi
+
+if [ "$LANG_MODE" = "latin" ]; then
+    lang_flag="-L"
+elif [ "$LANG_MODE" = "greek" ]; then
+    lang_flag="-G"
+else
+    lang_flag="-L"
 fi
 
 # Set appropriate dictionary file based on language
@@ -245,6 +259,7 @@ display_output() {
     fi
 }
 
+
 # Set up output method
 if [ "$DIRECT_OUTPUT" = false ]; then
     # Create a temporary file that will persist until script ends
@@ -264,6 +279,20 @@ fi
     echo "Searching for '$SEARCH_WORD' in $DICT_NAME..."
     echo "-------------------------------------------------------------"
 } | output_result
+
+run_morpheus() {
+    local word="$1"
+    local lang_flag="-L"  # default Latin
+
+    if [ "$LANG_MODE" = "greek" ]; then
+        lang_flag="-G"
+    fi
+    morpheus $lang_flag -l <<< "$word" | tail -n 1 | awk '{print $1}' | sed 's/#.*//'
+}
+if [ "$LEMMATIZE" = "true" ]; then
+    echo "Search term '$SEARCH_WORD' replaced with lemma '$(run_morpheus "$SEARCH_WORD")'." | output_result
+    SEARCH_WORD=$(run_morpheus "$SEARCH_WORD")
+fi
 
 # Create a diacritical-flexible pattern for Latin characters
 create_latin_diacritic_pattern() {
@@ -315,6 +344,13 @@ create_diacritic_pattern() {
         create_greek_diacritic_pattern "$input"
     fi
 }
+
+{
+    echo "Morphological analysis for '$SEARCH_WORD':"
+    echo "------------------------------------------"
+    echo "$SEARCH_WORD" | morpheus $lang_flag -S -n | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t
+    echo ""
+} | output_result
 
 # Function to search for the entry with language-specific patterns
 find_headword() {
@@ -441,7 +477,7 @@ fi
 # If we're using context mode, display specified number of lines around the match
 if [ "$CONTEXT_LINES" -gt 0 ]; then
     # Calculate the start line, ensuring it's not less than 1
-    start_line=$((line_number - CONTEXT_LINES))
+start_line=$((line_number - CONTEXT_LINES))
     [ "$start_line" -lt 1 ] && start_line=1
 
     # Calculate the end line
