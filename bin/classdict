@@ -287,8 +287,17 @@ run_morpheus() {
     if [ "$LANG_MODE" = "greek" ]; then
         lang_flag="-G"
     fi
-    morpheus $lang_flag -l <<< "$word" | tail -n 1 | awk '{print $1}' | sed 's/#.*//'
+    morpheus $lang_flag -S -n <<< "$word" | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t | awk 'NR==2 {
+  split($2, parts, ",");
+  if (length(parts) > 1)
+    print parts[2];
+  else
+    print parts[1];
+  exit
+}'| sed 's/#.*//'
 }
+
+SEARCH_WORD_UNLEMMATIZED=$SEARCH_WORD
 if [ "$LEMMATIZE" = "true" ]; then
     echo "Search term '$SEARCH_WORD' replaced with lemma '$(run_morpheus "$SEARCH_WORD")'." | output_result
     SEARCH_WORD=$(run_morpheus "$SEARCH_WORD")
@@ -346,9 +355,9 @@ create_diacritic_pattern() {
 }
 
 {
-    echo "Morphological analysis for '$SEARCH_WORD':"
+    echo "Morphological analysis for '$SEARCH_WORD_UNLEMMATIZED':"
     echo "------------------------------------------"
-    echo "$SEARCH_WORD" | morpheus $lang_flag -S -n | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t
+    echo "$SEARCH_WORD_UNLEMMATIZED" | morpheus $lang_flag -S -n | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t
     echo ""
 } | output_result
 
