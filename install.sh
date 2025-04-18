@@ -107,12 +107,12 @@ fi
 
 # Check Latin dictionary files if needed
 if [ "$INSTALL_LATIN" = true ]; then
-    if [ -f "$SCRIPT_DIR/data/latin/lewis-short.txt" ]; then
-        LAT_DICT_PATH="$SCRIPT_DIR/data/latin/lewis-short.txt"
-    elif [ -f "$SCRIPT_DIR/data/lewis-short.txt" ]; then
-        LAT_DICT_PATH="$SCRIPT_DIR/data/lewis-short.txt"
-    elif [ -f "$SCRIPT_DIR/lewis-short.txt" ]; then
-        LAT_DICT_PATH="$SCRIPT_DIR/lewis-short.txt"
+    if [ -f "$SCRIPT_DIR/data/latin/lewis-short.db" ]; then
+        LAT_DICT_PATH="$SCRIPT_DIR/data/latin/lewis-short.db"
+    elif [ -f "$SCRIPT_DIR/data/lewis-short.db" ]; then
+        LAT_DICT_PATH="$SCRIPT_DIR/data/lewis-short.db"
+    elif [ -f "$SCRIPT_DIR/lewis-short.db" ]; then
+        LAT_DICT_PATH="$SCRIPT_DIR/lewis-short.db"
     else
         echo -e "${RED}Error: Cannot find Latin dictionary files${NC}"
         exit 1
@@ -121,12 +121,12 @@ fi
 
 # Check Greek dictionary files if needed
 if [ "$INSTALL_GREEK" = true ]; then
-    if [ -f "$SCRIPT_DIR/data/greek/lsj.txt" ]; then
-        GRK_DICT_PATH="$SCRIPT_DIR/data/greek/lsj.txt"
-    elif [ -f "$SCRIPT_DIR/data/lsj.txt" ]; then
-        GRK_DICT_PATH="$SCRIPT_DIR/data/lsj.txt"
-    elif [ -f "$SCRIPT_DIR/lsj.txt" ]; then
-        GRK_DICT_PATH="$SCRIPT_DIR/lsj.txt"
+    if [ -f "$SCRIPT_DIR/data/greek/lsj.db" ]; then
+        GRK_DICT_PATH="$SCRIPT_DIR/data/greek/lsj.db"
+    elif [ -f "$SCRIPT_DIR/data/lsj.db" ]; then
+        GRK_DICT_PATH="$SCRIPT_DIR/data/lsj.db"
+    elif [ -f "$SCRIPT_DIR/lsj.db" ]; then
+        GRK_DICT_PATH="$SCRIPT_DIR/lsj.db"
     else
         echo -e "${YELLOW}Warning: Greek dictionary files not found${NC}"
         echo -e "${YELLOW}Greek dictionary installation will be skipped${NC}"
@@ -267,7 +267,7 @@ check_existing() {
         fi
     fi
 
-    if [ "$INSTALL_LATIN" = true ] && [ -f "$DATA_DIR/latin/lewis-short.txt" ] && [ "$FORCE_INSTALL" = false ]; then
+    if [ "$INSTALL_LATIN" = true ] && [ -f "$DATA_DIR/latin/lewis-short.db" ] && [ "$FORCE_INSTALL" = false ]; then
         echo -e "${YELLOW}Latin dictionary files already exist in $DATA_DIR/latin${NC}"
         read -p "Do you want to overwrite them? (y/n): " response
         if [[ ! "$response" =~ ^[Yy]$ ]]; then
@@ -280,7 +280,7 @@ check_existing() {
         PRESERVE_LAT_DICT=false
     fi
 
-    if [ "$INSTALL_GREEK" = true ] && [ -f "$DATA_DIR/greek/lsj.txt" ] && [ "$FORCE_INSTALL" = false ]; then
+    if [ "$INSTALL_GREEK" = true ] && [ -f "$DATA_DIR/greek/lsj.db" ] && [ "$FORCE_INSTALL" = false ]; then
         echo -e "${YELLOW}Greek dictionary files already exist in $DATA_DIR/greek${NC}"
         read -p "Do you want to overwrite them? (y/n): " response
         if [[ ! "$response" =~ ^[Yy]$ ]]; then
@@ -347,11 +347,11 @@ install_files() {
 
     # Update the dictionary paths
     if [ "$INSTALL_LATIN" = true ]; then
-        sed -i "s|LAT_DICT_FILE=\"data/latin/lewis-short.txt\"|LAT_DICT_FILE=\"$DATA_DIR/latin/lewis-short.txt\"|g" "$SCRIPT_DIR/classdict.tmp"
+        sed -i "s|LAT_DICT_FILE=\"data/latin/lewis-short.db\"|LAT_DICT_FILE=\"$DATA_DIR/latin/lewis-short.db\"|g" "$SCRIPT_DIR/classdict.tmp"
     fi
 
     if [ "$INSTALL_GREEK" = true ]; then
-        sed -i "s|GRK_DICT_FILE=\"data/greek/lsj.txt\"|GRK_DICT_FILE=\"$DATA_DIR/greek/lsj.txt\"|g" "$SCRIPT_DIR/classdict.tmp"
+        sed -i "s|GRK_DICT_FILE=\"data/greek/lsj.db\"|GRK_DICT_FILE=\"$DATA_DIR/greek/lsj.db\"|g" "$SCRIPT_DIR/classdict.tmp"
     fi
 
     # Add Morpheus support to the script
@@ -420,12 +420,12 @@ install_files() {
         exit 1
     fi
 
-    if [ "$INSTALL_LATIN" = true ] && [ "$PRESERVE_LAT_DICT" = false ] && [ ! -f "$DATA_DIR/latin/lewis-short.txt" ]; then
+    if [ "$INSTALL_LATIN" = true ] && [ "$PRESERVE_LAT_DICT" = false ] && [ ! -f "$DATA_DIR/latin/lewis-short.db" ]; then
         echo -e "${RED}Failed to install Latin dictionary files.${NC}"
         exit 1
     fi
 
-    if [ "$INSTALL_GREEK" = true ] && [ "$PRESERVE_GRK_DICT" = false ] && [ ! -f "$DATA_DIR/greek/lsj.txt" ]; then
+    if [ "$INSTALL_GREEK" = true ] && [ "$PRESERVE_GRK_DICT" = false ] && [ ! -f "$DATA_DIR/greek/lsj.db" ]; then
         echo -e "${RED}Failed to install Greek dictionary files.${NC}"
         exit 1
     fi

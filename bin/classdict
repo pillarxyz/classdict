@@ -1,73 +1,72 @@
 #!/bin/bash
 
-# lsdict - Tool to extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries
-# Usage: lsdict [options] WORD
+# classdict - Tool to extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries using SQLite
+# Usage: classdict [options] WORD
 
 # Copyright (c) 2025, Ayman Lafaz
 # All rights reserved.
 # Licensed under the BSD 3-Clause License
 # See LICENSE file for details
 
-# Configuration - default dictionary file paths
+# Configuration - default dictionary database paths
 # These will be updated during installation
 LANG_MODE="auto"  # auto, latin, or greek
 
-# Latin dictionaries
-LAT_DICT_FILE="data/latin/lewis-short.txt"
+# Latin dictionary database
+LAT_DICT_DB="data/latin/lewis-short.db"
 
-# Greek dictionaries
-GRK_DICT_FILE="data/greek/lsj.txt"
+# Greek dictionary database
+GRK_DICT_DB="data/greek/lsj.db"
 
 # Active dictionary (will be set based on options)
-DICTIONARY_FILE=""
+DICTIONARY_DB=""
 
 # Version information
-VERSION="1.1.0"
+VERSION="2.0.0"
 SCRIPT_NAME=$(basename "$0")
 
-# Function to find dictionary files
+# Function to find dictionary database files
 find_dictionary_files() {
-    # Look in standard locations for Latin dictionaries
+    # Look in standard locations for Latin dictionary database
     latin_std_locations=(
-        "$LAT_DICT_FILE"                                         # Direct path (already modified by installer)
-        "$(dirname "$0")/../share/lsdict/latin/lewis-short.txt"  # Relative to script location
-        "/usr/local/share/lsdict/latin/lewis-short.txt"          # System-wide location
-        "/usr/share/lsdict/latin/lewis-short.txt"                # Alternative system location
-        "$HOME/.local/share/lsdict/latin/lewis-short.txt"        # User's local share
-        "$HOME/.config/lsdict/latin/lewis-short.txt"             # User's config dir
-        "./data/latin/lewis-short.txt"                           # Project directory
-        "./lewis-short.txt"                                       # Current directory
+        "$LAT_DICT_DB"
+        "$(dirname "$0")/../share/classdict/latin/lewis-short.db"
+        "/usr/local/share/classdict/latin/lewis-short.db"
+        "/usr/share/classdict/latin/lewis-short.db"
+        "$HOME/.local/share/classdict/latin/lewis-short.db"
+        "$HOME/.config/classdict/latin/lewis-short.db"
+        "./data/latin/lewis-short.db"
+        "./lewis-short.db"
     )
 
-
-    # Look in standard locations for Greek dictionaries
+    # Look in standard locations for Greek dictionary database
     greek_std_locations=(
-        "$GRK_DICT_FILE"                                         # Direct path
-        "$(dirname "$0")/../share/lsdict/greek/lsj.txt"          # Relative to script location
-        "/usr/local/share/lsdict/greek/lsj.txt"                  # System-wide location
-        "/usr/share/lsdict/greek/lsj.txt"                        # Alternative system location
-        "$HOME/.local/share/lsdict/greek/lsj.txt"                # User's local share
-        "$HOME/.config/lsdict/greek/lsj.txt"                     # User's config dir
-        "./data/greek/lsj.txt"                                   # Project directory
-        "./lsj.txt"                                               # Current directory
+        "$GRK_DICT_DB"
+        "$(dirname "$0")/../share/classdict/greek/lsj.db"
+        "/usr/local/share/classdict/greek/lsj.db"
+        "/usr/share/classdict/greek/lsj.db"
+        "$HOME/.local/share/classdict/greek/lsj.db"
+        "$HOME/.config/classdict/greek/lsj.db"
+        "./data/greek/lsj.db"
+        "./lsj.db"
     )
 
-    # Find Latin dictionary files
+    # Find Latin dictionary database files
     for location in "${latin_std_locations[@]}"; do
         if [ -f "$location" ]; then
-            LAT_DICT_FILE="$location"
+            LAT_DICT_DB="$location"
             break
         fi
     done
 
-        # Find Greek dictionary files
+    # Find Greek dictionary database files
     for location in "${greek_std_locations[@]}"; do
         if [ -f "$location" ]; then
-            GRK_DICT_FILE="$location"
+            GRK_DICT_DB="$location"
             break
         fi
     done
-    }
+}
 
 # Auto-detect if a word is Greek or Latin
 detect_language() {
@@ -85,42 +84,63 @@ detect_language() {
 # Function to display usage information
 show_usage() {
     echo "Usage: $SCRIPT_NAME [options] WORD"
-    echo "Extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries"
+    echo "Extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries using SQLite"
     echo ""
     echo "  -h, --help             Show this help message"
-    echo "  -f, --file FILE        Specify a different dictionary file path"
-    echo "  -c, --context LINES    Show LINES of context before and after the match"
-    echo "  -e, --exact            Require exact match (with diacritical flexibility)"
+    echo "  -f, --file FILE        Specify a different dictionary database path"
+    echo "  -e, --exact            Require exact match (without normalization)"
     echo "  -S, --suggest          Show suggestions for similar words when no match is found"
     echo "  -L, --lemmatize        Replaces the word with its lemma and then searches for it"
     echo "  -d, --direct           Print directly to terminal (no external viewer)"
     echo "  -v, --version          Display version information"
     echo "  -l, --latin            Force Latin dictionary mode"
     echo "  -g, --greek            Force Greek dictionary mode"
+    echo "  -m, --multiple [N]     Allow multiple matches and let user select (default: 5 matches)"
     echo ""
     echo "Examples:"
     echo "  $SCRIPT_NAME amor                # Latin word lookup"
     echo "  $SCRIPT_NAME λόγος              # Greek word lookup"
     echo "  $SCRIPT_NAME --latin virtus     # Force Latin dictionary"
     echo "  $SCRIPT_NAME --greek ἀρετή      # Force Greek dictionary"
-    echo "  $SCRIPT_NAME -c 5 virtus        # Show 5 lines of context"
-    echo "  $SCRIPT_NAME -e amo             # Exact match (allows for diacritics)"
+    echo "  $SCRIPT_NAME -e amo             # Exact match"
+    echo "  $SCRIPT_NAME -S amor            # Show suggestions if not found"
+    echo "  $SCRIPT_NAME -L amabam          # Lemmatize word first (amabam → amo)"
+    echo "  $SCRIPT_NAME -m 10 amo          # Show up to 10 matches and let user select"
 }
 
 # Show version information
 show_version() {
-    echo "$SCRIPT_NAME - Latin/Greek Dictionary CLI Tool"
+    echo "$SCRIPT_NAME - Latin/Greek Dictionary CLI Tool (SQLite Version)"
     echo "Version $VERSION"
     echo "Copyright (c) 2025, Ayman Lafaz"
     echo "Licensed under the BSD 3-Clause License"
 }
 
+# Check if sqlite3 is available
+check_sqlite3() {
+    if ! command -v sqlite3 &> /dev/null; then
+        echo "Error: sqlite3 command not found. Please install SQLite."
+        exit 1
+    fi
+}
+
+
+convert_greek_to_beta() {
+  python3 -c "import sys; from beta_code import greek_to_beta_code; print(greek_to_beta_code(sys.argv[1]))" "$1"
+}
+convert_beta_to_greek() {
+  python3 -c "import sys; from beta_code import beta_code_to_greek; print(beta_code_to_greek(sys.argv[1]))" "$1"
+}
+
+
+
 # Parse command-line arguments
-CONTEXT_LINES=0
 EXACT_MATCH=false
 SUGGEST=false
 DIRECT_OUTPUT=false
 LEMMATIZE=false
+MULTIPLE_MATCHES=false
+MAX_MATCHES=5
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -133,11 +153,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         -f|--file)
-            CUSTOM_DICT_FILE="$2"
-            shift 2
-            ;;
-        -c|--context)
-            CONTEXT_LINES="$2"
+            CUSTOM_DICT_DB="$2"
             shift 2
             ;;
         -e|--exact)
@@ -148,7 +164,7 @@ while [[ $# -gt 0 ]]; do
             SUGGEST=true
             shift
             ;;
-	-L|--lemmatize)
+        -L|--lemmatize)
             LEMMATIZE=true
             shift
             ;;
@@ -163,6 +179,16 @@ while [[ $# -gt 0 ]]; do
         -g|--greek)
             LANG_MODE="greek"
             shift
+            ;;
+        -m|--multiple)
+            MULTIPLE_MATCHES=true
+            # Check if next argument is a number
+            if [[ $2 =~ ^[0-9]+$ ]]; then
+                MAX_MATCHES="$2"
+                shift 2
+            else
+                shift
+            fi
             ;;
         -*)
             echo "Error: Unknown option: $1"
@@ -183,6 +209,9 @@ if [ -z "$SEARCH_WORD" ]; then
     exit 1
 fi
 
+# Check for sqlite3
+check_sqlite3
+
 # Locate dictionary files
 find_dictionary_files
 
@@ -191,20 +220,21 @@ if [ "$LANG_MODE" = "auto" ]; then
     LANG_MODE=$(detect_language "$SEARCH_WORD")
 fi
 
+# Set language flag for morpheus
 if [ "$LANG_MODE" = "latin" ]; then
     lang_flag="-L"
 elif [ "$LANG_MODE" = "greek" ]; then
-    lang_flag="-G"
+    lang_flag=""
 else
-    lang_flag="-L"
+    lang_flag="-L" # Default to Latin
 fi
 
 # Set appropriate dictionary file based on language
 if [ "$LANG_MODE" = "latin" ]; then
-    DICTIONARY_FILE="$LAT_DICT_FILE"
+    DICTIONARY_DB="$LAT_DICT_DB"
     DICT_NAME="Lewis & Short Latin Dictionary"
 elif [ "$LANG_MODE" = "greek" ]; then
-    DICTIONARY_FILE="$GRK_DICT_FILE"
+    DICTIONARY_DB="$GRK_DICT_DB"
     DICT_NAME="Liddell-Scott-Jones Greek Dictionary"
 else
     echo "Error: Unknown language mode: $LANG_MODE"
@@ -212,12 +242,12 @@ else
 fi
 
 # Use custom dictionary file if specified
-if [ -n "$CUSTOM_DICT_FILE" ]; then
-    DICTIONARY_FILE="$CUSTOM_DICT_FILE"
+if [ -n "$CUSTOM_DICT_DB" ]; then
+    DICTIONARY_DB="$CUSTOM_DICT_DB"
 fi
 
-if [ ! -f "$DICTIONARY_FILE" ]; then
-    echo "Error: Dictionary file '$DICTIONARY_FILE' not found!"
+if [ ! -f "$DICTIONARY_DB" ]; then
+    echo "Error: Dictionary database '$DICTIONARY_DB' not found!"
     echo "Make sure you're running this script from the correct directory,"
     echo "or specify the correct path with the -f option."
     echo ""
@@ -259,11 +289,15 @@ display_output() {
     fi
 }
 
+strip_homonym_suffix() {
+    echo "$1" | sed 's/[0-9]\+$//'
+}
+
 
 # Set up output method
 if [ "$DIRECT_OUTPUT" = false ]; then
     # Create a temporary file that will persist until script ends
-    TEMP_FILE=$(mktemp /tmp/lsdict.XXXXXX)
+    TEMP_FILE=$(mktemp /tmp/classdict.XXXXXX)
 
     # Set up trap to clean up on exit
     trap 'rm -f "$TEMP_FILE"' EXIT
@@ -282,178 +316,272 @@ fi
 
 run_morpheus() {
     local word="$1"
-    local lang_flag="-L"  # default Latin
 
     if [ "$LANG_MODE" = "greek" ]; then
-        lang_flag="-G"
+        local beta_word
+        beta_word=$(convert_greek_to_beta "$word")
+
+        local result
+        result=$(morpheus $lang_flag -S -n <<< "$beta_word" | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g')
+
+        # Extract lemma from second field of first valid line
+        local lemma
+        lemma=$(echo "$result" | awk 'NF >= 2 { print $2; exit }')
+
+        # Strip homonym suffix (like λέγω3 → λέγω)
+        lemma=$(strip_homonym_suffix "$lemma")
+
+        if [ -n "$lemma" ]; then
+            # Convert back to Greek for final use
+            lemma=$(convert_beta_to_greek "$lemma")
+            echo "$lemma"
+        else
+            echo ""
+        fi
+
+    else
+        # LATIN logic: use existing method
+        morpheus $lang_flag -S -n <<< "$word" \
+            | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t \
+            | awk '{
+                  line = $0;
+                  second_field = $2;
+              }
+              END {
+                  split(second_field, parts, ",");
+                  last_non_empty = "";
+                  for (i = 1; i <= length(parts); i++) {
+                    if (parts[i] != "")
+                      last_non_empty = parts[i];
+                  }
+                  print last_non_empty;
+              }' | sed 's/#.*//'
     fi
-    morpheus $lang_flag -S -n <<< "$word" | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t | awk 'NR==2 {
-  split($2, parts, ",");
-  if (length(parts) > 1)
-    print parts[2];
-  else
-    print parts[1];
-  exit
-}'| sed 's/#.*//'
 }
 
+# Store original search word and lemmatize if requested
 SEARCH_WORD_UNLEMMATIZED=$SEARCH_WORD
 if [ "$LEMMATIZE" = "true" ]; then
-    echo "Search term '$SEARCH_WORD' replaced with lemma '$(run_morpheus "$SEARCH_WORD")'." | output_result
-    SEARCH_WORD=$(run_morpheus "$SEARCH_WORD")
+    LEMMA=$(run_morpheus "$SEARCH_WORD")
+    if [ -n "$LEMMA" ]; then
+        echo "Search term '$SEARCH_WORD' replaced with lemma '$LEMMA'." | output_result
+        SEARCH_WORD=$LEMMA
+    else
+        echo "Could not lemmatize '$SEARCH_WORD'. Using as-is." | output_result
+    fi
 fi
 
-# Create a diacritical-flexible pattern for Latin characters
-create_latin_diacritic_pattern() {
+# Function to normalize Latin words for better matching
+normalize_latin() {
     local input="$1"
-    local pattern=""
-    for (( i=0; i<${#input}; i++ )); do
-        char="${input:$i:1}"
-        case "$char" in
-            [aA]) pattern+="[aAāăäÄ]" ;;
-            [eE]) pattern+="[eEēĕëË]" ;;
-            [iI]) pattern+="[iIīĭïÏ]" ;;
-            [oO]) pattern+="[oOōŏöÖ]" ;;
-            [uU]) pattern+="[uUūŭüÜ]" ;;
-            [yY]) pattern+="[yYȳÿŸ]" ;;
-            *) pattern+="$char" ;;
-        esac
-    done
-    echo "$pattern"
+    # Convert to lowercase
+    input=$(echo "$input" | tr '[:upper:]' '[:lower:]')
+
+    # Replace individual diacritics with their base letter one by one
+    input=$(echo "$input" | sed 's/ā/a/g; s/ă/a/g; s/ä/a/g;
+                                s/ē/e/g; s/ĕ/e/g; s/ë/e/g;
+                                s/ī/i/g; s/ĭ/i/g; s/ï/i/g;
+                                s/ō/o/g; s/ŏ/o/g; s/ö/o/g;
+                                s/ū/u/g; s/ŭ/u/g; s/ü/u/g;
+                                s/ȳ/y/g; s/ÿ/y/g;')
+    echo "$input"
 }
 
-# Create a diacritical-flexible pattern for Greek characters
-create_greek_diacritic_pattern() {
+# Function to normalize Greek words for better matching
+normalize_greek() {
     local input="$1"
-    local pattern=""
-    for (( i=0; i<${#input}; i++ )); do
-        char="${input:$i:1}"
-        case "$char" in
-            α) pattern+="[αἀἁἂἃἄἅἆἇὰάᾀᾁᾂᾃᾄᾅᾆᾇᾰᾱᾲᾳᾴᾶᾷ]" ;;
-            ε) pattern+="[εἐἑἒἓἔἕὲέ]" ;;
-            η) pattern+="[ηἠἡἢἣἤἥἦἧὴήᾐᾑᾒᾓᾔᾕᾖᾗῂῃῄῆῇ]" ;;
-            ι) pattern+="[ιἰἱἲἳἴἵἶἷὶίῐῑῒΐῖῗ]" ;;
-            ο) pattern+="[οὀὁὂὃὄὅὸό]" ;;
-            υ) pattern+="[υὐὑὒὓὔὕὖὗὺύῠῡῢΰῦῧ]" ;;
-            ω) pattern+="[ωὠὡὢὣὤὥὦὧὼώᾠᾡᾢᾣᾤᾥᾦᾧῲῳῴῶῷ]" ;;
-            [αεηιουω]) pattern+="[${char}]" ;; # Keep simpler for any already matched
-            *) pattern+="$char" ;;
-        esac
-    done
-    echo "$pattern"
+    # Convert to lowercase
+    input=$(echo "$input" | tr '[:upper:]' '[:lower:]')
+
+    # Replace breathings, accents, and other diacritics
+    input=$(echo "$input" | sed '
+        s/[ἀἁἂἃἄἅἆἇᾀᾁᾂᾃᾄᾅᾆᾇὰάᾰᾱᾲᾳᾴᾶᾷ]/α/g;
+        s/[ἐἑἒἓἔἕὲέ]/ε/g;
+        s/[ἠἡἢἣἤἥἦἧᾐᾑᾒᾓᾔᾕᾖᾗὴήῂῃῄῆῇ]/η/g;
+        s/[ἰἱἲἳἴἵἶἷὶίῐῑῒΐῖῗ]/ι/g;
+        s/[ὀὁὂὃὄὅὸό]/ο/g;
+        s/[ὐὑὒὓὔὕὖὗὺύῠῡῢΰῦῧ]/υ/g;
+        s/[ὠὡὢὣὤὥὦὧᾠᾡᾢᾣᾤᾥᾦᾧὼώῲῳῴῶῷ]/ω/g;
+        s/[ῤῥ]/ρ/g;')
+    echo "$input"
 }
 
-# Create appropriate diacritical pattern based on language
-create_diacritic_pattern() {
-    local input="$1"
+# Choose the appropriate normalization function based on language
+normalize_word() {
+    local word="$1"
 
     if [ "$LANG_MODE" = "latin" ]; then
-        create_latin_diacritic_pattern "$input"
+        normalize_latin "$word"
     else
-        create_greek_diacritic_pattern "$input"
+        normalize_greek "$word"
     fi
 }
 
 {
-    echo "Morphological analysis for '$SEARCH_WORD_UNLEMMATIZED':"
-    echo "------------------------------------------"
-    echo "$SEARCH_WORD_UNLEMMATIZED" | morpheus $lang_flag -S -n | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t
-    echo ""
+  echo "Morphological analysis for '$SEARCH_WORD_UNLEMMATIZED':"
+  echo "------------------------------------------"
+
+  if [ "$LANG_MODE" = "greek" ]; then
+    # Convert Greek script to Beta Code
+    beta_word=$(convert_greek_to_beta "$SEARCH_WORD_UNLEMMATIZED")
+
+    # Perform morphological analysis and clean formatting
+    echo "$beta_word" | morpheus $lang_flag -S -n |
+      sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' |
+      while IFS= read -r line; do
+        word=$(echo "$line" | awk '{print $1}')
+        rest=$(echo "$line" | cut -d' ' -f2-)
+        greek_word=$(convert_beta_to_greek "$word")
+        printf "%-20s %s\n" "$greek_word" "$rest"
+      done | column -t
+
+  else
+    # For Latin or other languages
+    echo "$SEARCH_WORD_UNLEMMATIZED" | morpheus $lang_flag -S -n |
+      sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t
+  fi
+
+  echo ""
 } | output_result
 
-# Function to search for the entry with language-specific patterns
-find_headword() {
-    local search_word="$1"
-    local line_number=""
+# Function to select entry from multiple matches
 
-    # Different search patterns based on language
-    if [ "$LANG_MODE" = "latin" ]; then
-        # Latin search patterns - similar to original but with improvements
+select_from_matches() {
+    local matches=("$@")
+    local num_matches=${#matches[@]}
 
-        # First attempt: try to find the exact word as a headword with a clear boundary
-        pattern="^[[:space:]]*$search_word[[:space:]]*[,.(]"
-        line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
+    # Display the matches with numbers
+    echo "Multiple matches found. Please select one:" >&2
+    for i in $(seq 0 $((num_matches - 1))); do
+        # Extract just the headword from the line (before the pipe)
+        local headword=$(echo "${matches[$i]}" | cut -d'|' -f1)
+        echo "  $((i + 1)). $headword" >&2
+    done
 
-        # If not found, try with diacritical flexibility
-        if [ -z "$line_number" ]; then
-            relaxed_pattern=$(create_diacritic_pattern "$search_word")
-            pattern="^[[:space:]]*$relaxed_pattern[[:space:]]*[,.(]"
-            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-        fi
+    # Prompt for selection
+    echo "Enter number (1-$num_matches) or 'q' to quit: " >&2
+    read -r selection
 
-        # If still not found and not in exact match mode, try more flexible approaches
-        if [ -z "$line_number" ] && [ "$EXACT_MATCH" != true ]; then
-            # Try looking for common entry patterns like "ămo, āvi, ātum"
-            pattern="^[[:space:]]*[ăāĕēĭīŏōŭū]?$search_word[[:space:]]*[,]"
-            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-
-            # Try with diacritical flexibility
-            if [ -z "$line_number" ]; then
-                relaxed_pattern=$(create_diacritic_pattern "$search_word")
-                pattern="^[[:space:]]*[ăāĕēĭīŏōŭū]?$relaxed_pattern[[:space:]]*[,]"
-                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-            fi
-
-            # Try looking for the word as part of a hyphenated or compound term at the start of entry
-            if [ -z "$line_number" ] && [ ${#search_word} -gt 2 ]; then
-                relaxed_pattern=$(create_diacritic_pattern "$search_word")
-                pattern="^[[:space:]]*[^-]*$relaxed_pattern[^-]*[[:space:]]*[,.(]"
-                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-            fi
-
-            # Try removing the last character (for declined/conjugated forms)
-            if [ -z "$line_number" ] && [ ${#search_word} -gt 2 ]; then
-                stem="${search_word%?}"
-                stem_pattern=$(create_diacritic_pattern "$stem")
-                pattern="^[[:space:]]*$stem_pattern[[:alpha:]]*[[:space:]]*[,.(]"
-                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-            fi
-        fi
+    # Validate selection
+    if [[ "$selection" == "q" ]]; then
+        echo "Search canceled." >&2
+        return 1
+    elif [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "$num_matches" ]; then
+        echo "${matches[$((selection - 1))]}"
+        return 0
     else
-        # Greek search patterns - adapted for Greek dictionary format
-
-        # First attempt: try to find the exact word as a headword
-        pattern="^[[:space:]]*$search_word[[:space:]]*[,.(]"
-        line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-
-        # If not found, try with diacritical flexibility
-        if [ -z "$line_number" ]; then
-            relaxed_pattern=$(create_diacritic_pattern "$search_word")
-            pattern="^[[:space:]]*$relaxed_pattern[[:space:]]*[,.(]"
-            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-        fi
-
-        # Try special patterns for Greek entries
-        if [ -z "$line_number" ] && [ "$EXACT_MATCH" != true ]; then
-            # Try looking for word with asterisk (common in LSJ)
-            pattern="^[[:space:]]*\\*$search_word[[:space:]]*[,.(]"
-            line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-
-            # Try with diacritical flexibility
-            if [ -z "$line_number" ]; then
-                relaxed_pattern=$(create_diacritic_pattern "$search_word")
-                pattern="^[[:space:]]*\\*$relaxed_pattern[[:space:]]*[,.(]"
-                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-            fi
-
-            # Try removing the last character (for declined/conjugated forms)
-            if [ -z "$line_number" ] && [ ${#search_word} -gt 2 ]; then
-                stem="${search_word%?}"
-                stem_pattern=$(create_diacritic_pattern "$stem")
-                pattern="^[[:space:]]*$stem_pattern[[:alpha:]]*[[:space:]]*[,.(]"
-                line_number=$(grep -n "$pattern" "$DICTIONARY_FILE" | head -1 | cut -d: -f1)
-            fi
-        fi
+        echo "Invalid selection. Displaying first match." >&2
+        echo "${matches[0]}"
+        return 0
     fi
-
-    echo "$line_number"
 }
 
-# Find the headword entry
-line_number=$(find_headword "$SEARCH_WORD")
 
-# If we still haven't found the word, try to provide suggestions if enabled
-if [ -z "$line_number" ]; then
+# Prepare search query based on options
+NORMALIZED_WORD=$(normalize_word "$SEARCH_WORD")
+
+if [ "$MULTIPLE_MATCHES" = true ]; then
+    # Search for multiple matches
+    if [ "$EXACT_MATCH" = true ]; then
+        # For exact match with multiple matches option
+        QUERY="SELECT headword, definition FROM dictionary WHERE headword = '$SEARCH_WORD' COLLATE NOCASE LIMIT $MAX_MATCHES;"
+    else
+        # For non-exact match with multiple matches option
+        QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_WORD'"
+
+        # If we used lemmatization, add condition for original word
+        if [ "$LEMMATIZE" = true ]; then
+            NORMALIZED_UNLEMMATIZED=$(normalize_word "$SEARCH_WORD_UNLEMMATIZED")
+            QUERY="$QUERY UNION ALL SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_UNLEMMATIZED'"
+        fi
+
+        # Add partial matches as another condition
+        QUERY="$QUERY UNION ALL SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '$NORMALIZED_WORD%'"
+
+        # Add matches within words as another condition
+        QUERY="$QUERY UNION ALL SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '%$NORMALIZED_WORD%'"
+
+        # Add limit at the end of the combined query
+        QUERY="$QUERY LIMIT $MAX_MATCHES;"
+    fi
+
+    # Execute the query and store results in an array
+    mapfile -t RESULTS < <(sqlite3 "$DICTIONARY_DB" "$QUERY")
+
+    # Count the number of results
+    NUM_RESULTS=${#RESULTS[@]}
+
+    if [ "$NUM_RESULTS" -gt 1 ]; then
+        # We have multiple matches, let the user select one
+        SELECTED_RESULT=$(select_from_matches "${RESULTS[@]}")
+        SELECTION_STATUS=$?
+
+        if [ "$SELECTION_STATUS" -eq 0 ] && [ -n "$SELECTED_RESULT" ]; then
+            # User made a valid selection
+            RESULT="$SELECTED_RESULT"
+        else
+            # User canceled or error occurred
+            exit 0
+        fi
+    elif [ "$NUM_RESULTS" -eq 1 ]; then
+        # Only one result found
+        RESULT="${RESULTS[0]}"
+    else
+        # No results found
+        RESULT=""
+    fi
+else
+    # Original search logic for single match
+    if [ "$EXACT_MATCH" = true ]; then
+        # For exact match, search directly in headword column
+        QUERY="SELECT headword, definition FROM dictionary WHERE headword = '$SEARCH_WORD' COLLATE NOCASE LIMIT 1;"
+        RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
+
+        # If no result, try with the original word
+        if [ -z "$RESULT" ] && [ "$LEMMATIZE" = true ]; then
+            QUERY="SELECT headword, definition FROM dictionary WHERE headword = '$SEARCH_WORD_UNLEMMATIZED' COLLATE NOCASE LIMIT 1;"
+            RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
+        fi
+    else
+        # For non-exact match, normalize the word and search in the normalized_headword column
+        QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_WORD' LIMIT 1;"
+        RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
+
+        # If no result and we used lemmatization, try with the original word
+        if [ -z "$RESULT" ] && [ "$LEMMATIZE" = true ]; then
+            NORMALIZED_UNLEMMATIZED=$(normalize_word "$SEARCH_WORD_UNLEMMATIZED")
+            QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_UNLEMMATIZED' LIMIT 1;"
+            RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
+        fi
+
+        # If still no result, try partial matches
+        if [ -z "$RESULT" ]; then
+            QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '$NORMALIZED_WORD%' LIMIT 1;"
+            RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
+        fi
+
+        # If still no result, try searching within words
+        if [ -z "$RESULT" ]; then
+            QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '%$NORMALIZED_WORD%' LIMIT 1;"
+            RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
+        fi
+    fi
+fi
+
+# If we found a result, display it
+if [ -n "$RESULT" ]; then
+    # Split result into headword and definition
+    HEADWORD=$(echo "$RESULT" | cut -d '|' -f 1)
+    DEFINITION=$(echo "$RESULT" | cut -d '|' -f 2-)
+
+    {
+        echo "Found entry: $HEADWORD"
+        echo "-------------------------------------------------------------"
+        echo "$DEFINITION"
+    } | output_result
+
+# If no result was found, try to provide suggestions if enabled
+else
     {
         echo "No entry found for '$SEARCH_WORD'."
         echo "Try checking the spelling or searching for a different form of the word."
@@ -461,90 +589,31 @@ if [ -z "$line_number" ]; then
         if [ "$SUGGEST" = true ]; then
             echo ""
             echo "Possible related entries:"
-            relaxed_pattern=$(create_diacritic_pattern "$SEARCH_WORD")
-            grep -i "^[[:space:]]*$relaxed_pattern" "$DICTIONARY_FILE" | head -5
+            NORMALIZED_WORD=$(normalize_word "$SEARCH_WORD")
+            SUGGEST_QUERY="SELECT headword FROM dictionary WHERE normalized_headword LIKE '$NORMALIZED_WORD%' LIMIT 5;"
+            SUGGESTIONS=$(sqlite3 "$DICTIONARY_DB" "$SUGGEST_QUERY")
 
-            # If nothing found with prefix, try substring match
-            if [ -z "$(grep -i "^[[:space:]]*$relaxed_pattern" "$DICTIONARY_FILE" | head -1)" ]; then
-                echo ""
-                echo "Or perhaps one of these entries contains your word:"
-                if [ "$LANG_MODE" = "latin" ]; then
-                    chars="a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ"
+            if [ -n "$SUGGESTIONS" ]; then
+                echo "$SUGGESTIONS"
+            else
+                # Try finding words that contain the search term
+                SUGGEST_QUERY="SELECT headword FROM dictionary WHERE normalized_headword LIKE '%$NORMALIZED_WORD%' LIMIT 5;"
+                SUGGESTIONS=$(sqlite3 "$DICTIONARY_DB" "$SUGGEST_QUERY")
+
+                if [ -n "$SUGGESTIONS" ]; then
+                    echo "Or perhaps one of these entries contains your word:"
+                    echo "$SUGGESTIONS"
                 else
-                    chars="α-ωΑ-Ωἀ-ᾯᾰ-ᾼῂ-ῼ"
+                    echo "No suggestions found."
                 fi
-                grep -i "^[[:space:]]*[$chars]*[[:space:]]*[,.(].*$SEARCH_WORD" "$DICTIONARY_FILE" | head -5
             fi
         fi
-    } | output_result
-
-    # Display the results if using a viewer
-    display_output
-    exit 0
-fi
-
-# If we're using context mode, display specified number of lines around the match
-if [ "$CONTEXT_LINES" -gt 0 ]; then
-    # Calculate the start line, ensuring it's not less than 1
-start_line=$((line_number - CONTEXT_LINES))
-    [ "$start_line" -lt 1 ] && start_line=1
-
-    # Calculate the end line
-    end_line=$((line_number + CONTEXT_LINES))
-
-    # Extract the context lines
-    {
-        echo "Showing $CONTEXT_LINES lines of context around match:"
-        echo "-------------------------------------------------------------"
-        sed -n "${start_line},${end_line}p" "$DICTIONARY_FILE"
-        echo "-------------------------------------------------------------"
-        echo "Note: This is showing only a context window, not necessarily the complete entry."
-    } | output_result
-else
-    # Extract the full entry using awk with improved logic for dictionary entries
-    {
-        if [ "$LANG_MODE" = "latin" ]; then
-            chars="a-zA-ZāēīōūȳăĕĭŏŭÿÄËÏÖÜŸäëïöüÿ"
-        else
-            chars="α-ωΑ-Ωἀ-ᾯᾰ-ᾼῂ-ῼ"
-        fi
-
-        awk -v start="$line_number" -v chars="$chars" '
-            # When we reach our starting line, start capturing
-            NR == start {
-                in_entry = 1;
-                print;
-                next
-            }
-
-            # Detect the start of a new dictionary entry by identifying headword patterns
-            in_entry && $0 ~ "^[[:space:]]*[" chars "][" chars "\\-]*[[:space:]]*[,.(]" {
-                # This needs to be the first real character of a line
-                if ($0 ~ "^[[:space:]]*[" chars "\\*]") {
-                    # Check if this looks like a dictionary headword entry
-                    # First, get the word by removing everything after the first comma, period, etc.
-                    word = $0
-                    sub(/[[:space:]]*[,.(].*$/, "", word)
-                    # Remove leading/trailing spaces
-                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", word)
-
-                    # If the word is short enough and has no spaces, it might be a headword
-                    if (length(word) <= 20 && word !~ / /) {
-                        in_entry = 0
-                        exit
-                    }
-                }
-            }
-
-            # Continue capturing lines between start and end
-            in_entry {print}
-        ' "$DICTIONARY_FILE"
     } | output_result
 fi
 
 {
     echo "-------------------------------------------------------------"
-    echo "Entry found in: $DICTIONARY_FILE"
+    echo "Database: $DICTIONARY_DB"
 } | output_result
 
 # Display the results if using a viewer
