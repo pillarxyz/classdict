@@ -101,5 +101,3 @@ classdict -m 10 amo          # Show up to 10 matches and let user select
 - **Lewis & Short** and **LSJ**: Perseus Digital Library, Tufts University
 - **Morpheus**: [perseids-tools/morpheus](https://github.com/perseids-tools/morpheus)
 - Thanks to The National Endowment for the Humanities for supporting public domain classics infrastructure
-
-```
