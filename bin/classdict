@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# classdict - Tool to extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries using SQLite
+# classdict - Tool to extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries
 # Usage: classdict [options] WORD
 
 # Copyright (c) 2025, Ayman Lafaz
@@ -84,7 +84,7 @@ detect_language() {
 # Function to display usage information
 show_usage() {
     echo "Usage: $SCRIPT_NAME [options] WORD"
-    echo "Extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries using SQLite"
+    echo "Extract entries from Latin (Lewis & Short) and Greek (LSJ) dictionaries"
     echo ""
     echo "  -h, --help             Show this help message"
     echo "  -f, --file FILE        Specify a different dictionary database path"
@@ -110,7 +110,7 @@ show_usage() {
 
 # Show version information
 show_version() {
-    echo "$SCRIPT_NAME - Latin/Greek Dictionary CLI Tool (SQLite Version)"
+    echo "$SCRIPT_NAME - Latin/Greek Dictionary CLI Tool"
     echo "Version $VERSION"
     echo "Copyright (c) 2025, Ayman Lafaz"
     echo "Licensed under the BSD 3-Clause License"

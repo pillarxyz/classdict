@@ -1,103 +1,105 @@
-# Classical Language Dictionary CLI
+# Classical Language Dictionary CLI (`classdict`)
 
-A command-line interface for looking up words in classical Latin and Greek dictionaries:
+A fast and flexible command-line dictionary tool for looking up Latin and Ancient Greek words.
 
 - **Latin**: Lewis & Short Latin Dictionary
-- **Greek**: Liddell-Scott-Jones Greek Lexicon
+- **Greek**: Liddell–Scott–Jones (LSJ) Greek Lexicon
 
-## Features
+## 🔍 Features
 
-- **Multilingual support**: Lookup words in both Latin and Greek dictionaries
-- **Automatic language detection**: Based on word characters
-- **Exact match and suggestions**: Search for exact matches or get similar word suggestions
-- **Context view**: See surrounding entries
-- **Diacritical flexibility**: Handle diacritical marks properly
-- **Terminal-friendly**: Option to print directly to terminal
+- **Multilingual support**: Lookup entries in Latin and Greek
+- **Automatic language detection**: Based on input characters
+- **SQLite-backed**: Fast indexed queries on structured dictionary data
+- **Lemmatization support**: Optional integration with [Morpheus](https://github.com/perseids-tools/morpheus)
+- **Fuzzy and normalized matching**: Diacritical- and case-insensitive search options
+- **Exact match or suggestions**: Flexible word matching
+- **Terminal-friendly**: Output to terminal or pager
 
-## Installation
+## 📦 Installation
 
 ### Method 1: Using `Makefile`
 
-```
-make install-all   # Install both dictionaries system-wide
-make install-greek # Install Greek dictionary
-make install       # Install Latin dictionary
+```bash
+make install-all          # Install both dictionaries system-wide
+make install              # Install Latin dictionary system-wide
+make install-greek        # Install Greek dictionary system-wide
 
-make user-install-all   # Install for current user
-make user-install-greek  # Install Greek for current user
-make user-install        # Install Latin for current user
+make user-install-all     # Install both for current user only
+make user-install         # Latin only for user
+make user-install-greek   # Greek only for user
 ```
 
 ### Method 2: Using the Installation Script
 
-```
-./install.sh --all       # System-wide installation of both dictionaries
-./install.sh --user --all # User-only installation of both dictionaries
+```bash
+./install.sh --all             # Install both dictionaries system-wide
+./install.sh --user --all      # Install both for current user
+./install.sh --latin           # Only Latin
+./install.sh --greek           # Only Greek
+./install.sh --morpheus        # Install Morpheus integration
 ```
 
-## Usage
+## 🛠️ Usage
+
+```bash
+classdict [options] WORD
+```
+
+Extract entries from the Latin or Greek dictionaries.
+
+### Options
 
 ```
 Usage: classdict [options] WORD
 Extract entries from Latin and Greek dictionaries
 
   -h, --help             Show this help message
-  -f, --file FILE        Specify a different dictionary file path
-  -c, --context LINES    Show LINES of context around the match
-  -e, --exact            Require exact match (with diacritical flexibility)
-  -S, --suggest          Show suggestions for similar words
-  -L, --lemmatize        Replace the word with its lemma
-  -d, --direct           Print directly to terminal (no pager)
-  -v, --version          Show version info
-  -l, --latin            Force Latin dictionary mode
-  -g, --greek            Force Greek dictionary mode
+  -f, --file FILE        Specify custom dictionary database
+  -e, --exact            Require exact match (ignores fuzzy suggestions)
+  -S, --suggest          Show similar word suggestions
+  -L, --lemmatize        Normalize the input word using Morpheus
+  -d, --direct           Print results directly to terminal (no pager)
+  -v, --version          Show version information
+  -l, --latin            Force Latin mode
+  -g, --greek            Force Greek mode
+  -m, --multiple [N]     Allow multiple matches and let user select (default: 5 matches)
 ```
 
 ### Examples
 
-```
-classidict amor        # Lookup Latin word
-classidict λόγος       # Lookup Greek word
-classidict --latin virtus
-classidict --greek ἀρετή
-classidict -c 5 virtus # Show 5 lines of context
-classidict -e amo      # Exact match
-classidict -S faci     # Get suggestions for similar words
-classidict -d amor     # Print directly to terminal
+```bash
+classdict amor               # Latin word lookup"
+classdict λόγος              # Greek word lookup"
+classdict --latin virtus     # Force Latin dictionary"
+classdict --greek ἀρετή      # Force Greek dictionary"
+classdict -e amo             # Exact match"
+classdict -S amor            # Show suggestions if not found"
+classidict -d amor     	     # Print directly to terminal
+classdict -L amabam          # Lemmatize word first (amabam → amo)"
+classdict -m 10 amo          # Show up to 10 matches and let user select
 ```
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 .
 ├── bin/                   # Executable scripts
-│   └── classidict         # Main lookup tool
-├── data/                  # Dictionary files
-│   ├── latin/             # Latin dictionary files
-│   │   └── lewis-short.txt
-│   └── greek/             # Greek dictionary files
-│       └── lsj.txt
+│   └── classdict          # Main CLI script
+├── data/                  # Dictionary databases
+│   ├── latin/
+│   │   └── lewis-short.db
+│   └── greek/
+│       └── lsj.db
 ├── install.sh             # Installation script
+├── Makefile               # Make-based installer
 ├── LICENSE                # BSD 3-Clause License
-├── Makefile               # Installation management
 └── README.md              # This file
 ```
 
-## Adding the LSJ Greek Dictionary
+## 🙏 Credits
 
-Currently the Ancient Greek LSJ dictionary is not well-parsed as I would have like if you want to add the LSJ Greek Dictionary by yourself:
-
-1. Get the dictionary files from [PerseusDL](https://github.com/PerseusDL).
-2. Parse the XML files to plain text files.
-3. Place them in `data/greek/lsj.txt`.
-4. Install using:
+- **Lewis & Short** and **LSJ**: Perseus Digital Library, Tufts University
+- **Morpheus**: [perseids-tools/morpheus](https://github.com/perseids-tools/morpheus)
+- Thanks to The National Endowment for the Humanities for supporting public domain classics infrastructure
 
 ```
-make install-all       # For system-wide installation
-make user-install-all  # For user-only installation
-```
-
-## Credits
-
-- Original dictionary texts from Perseus Digital Library, funded by The National Endowment for the Humanities
-- [Morpheus'](https://github.com/perseids-tools/morpheus) morphological parsing tool
