@@ -11,7 +11,7 @@ USER_INSTALL=false
 FORCE_INSTALL=false
 INSTALL_GREEK=false
 INSTALL_LATIN=true  # Install Latin by default
-INSTALL_MORPHEUS=false
+INSTALL_MORPHEUS=true
 
 # Script directory - to find files regardless of where script is run from
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -347,11 +347,11 @@ install_files() {
 
     # Update the dictionary paths
     if [ "$INSTALL_LATIN" = true ]; then
-        sed -i "s|LAT_DICT_FILE=\"data/latin/lewis-short.db\"|LAT_DICT_FILE=\"$DATA_DIR/latin/lewis-short.db\"|g" "$SCRIPT_DIR/classdict.tmp"
+        sed -i "s|LAT_DICT_DB=\"data/latin/lewis-short.db\"|LAT_DICT_DB=\"$DATA_DIR/latin/lewis-short.db\"|g" "$SCRIPT_DIR/classdict.tmp"
     fi
 
     if [ "$INSTALL_GREEK" = true ]; then
-        sed -i "s|GRK_DICT_FILE=\"data/greek/lsj.db\"|GRK_DICT_FILE=\"$DATA_DIR/greek/lsj.db\"|g" "$SCRIPT_DIR/classdict.tmp"
+        sed -i "s|GRK_DICT_DB=\"data/greek/lsj.db\"|GRK_DICT_DB=\"$DATA_DIR/greek/lsj.db\"|g" "$SCRIPT_DIR/classdict.tmp"
     fi
 
     # Add Morpheus support to the script

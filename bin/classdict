@@ -70,13 +70,19 @@ find_dictionary_files() {
 
 # Auto-detect if a word is Greek or Latin
 detect_language() {
-    local word="$1"
+    local word="$1" rc
 
-    # Check if word contains Greek characters
-    if echo "$word" | grep -q '[αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ]'; then
+    # Greek and Coptic (U+0370-03FF) + Greek Extended (U+1F00-1FFF)
+    LC_ALL=C.UTF-8 grep -qP '[\x{0370}-\x{03FF}\x{1F00}-\x{1FFF}]' <<< "$word" 2>/dev/null
+    rc=$?
+    if [ $rc -eq 0 ]; then
+        echo "greek"
+    elif [ $rc -eq 1 ]; then
+        echo "latin"
+    # grep -P unavailable: fall back to the plain-letter check
+    elif echo "$word" | grep -q '[αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ]'; then
         echo "greek"
     else
-        # Default to Latin if no Greek characters
         echo "latin"
     fi
 }
@@ -124,6 +130,13 @@ check_sqlite3() {
     fi
 }
 
+# Escape a value for safe interpolation into a single-quoted SQLite string
+# literal. SQLite has no backslash-escaping; a literal single quote inside a
+# string is represented by doubling it ('').
+sql_escape() {
+    printf '%s' "${1//\'/\'\'}"
+}
+
 
 convert_greek_to_beta() {
   python3 -c "import sys; from beta_code import greek_to_beta_code; print(greek_to_beta_code(sys.argv[1]))" "$1"
@@ -135,12 +148,12 @@ convert_beta_to_greek() {
 
 
 # Parse command-line arguments
-EXACT_MATCH=false
+EXACT_MATCH=true
 SUGGEST=false
 DIRECT_OUTPUT=false
 LEMMATIZE=false
-MULTIPLE_MATCHES=false
-MAX_MATCHES=5
+MULTIPLE_MATCHES=true
+MAX_MATCHES=10
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -304,13 +317,10 @@ if [ "$DIRECT_OUTPUT" = false ]; then
 
     check_viewer
 
-    # Print to terminal that we're searching
-    echo "Searching for '$SEARCH_WORD' in $DICT_NAME..."
 fi
 
 # Start building output
 {
-    echo "Searching for '$SEARCH_WORD' in $DICT_NAME..."
     echo "-------------------------------------------------------------"
 } | output_result
 
@@ -324,24 +334,53 @@ run_morpheus() {
         local result
         result=$(morpheus $lang_flag -S -n <<< "$beta_word" | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g')
 
-        # Extract lemma from second field of first valid line
+        # Morpheus lists every possible analysis (field 2 is "lemma" or
+        # "form,lemma"). Collect the candidate lemmas and, since the analyses
+        # are ambiguous, prefer the one with the largest LSJ entry (common
+        # words such as ἔχω/λέγω/εἰμί outweigh rarities like ἔχις/ἔλεγος).
         local lemma
-        lemma=$(echo "$result" | awk 'NF >= 2 { print $2; exit }')
+        lemma=$(printf '%s\n' "$result" | python3 -c '
+import re, sqlite3, sys, unicodedata
+from beta_code import beta_code_to_greek
+seen = []
+for line in sys.stdin:
+    f = line.split()
+    if len(f) < 2 or not re.fullmatch(r"[A-Z]", f[0]):
+        continue
+    tok = re.sub(r"[+\d]+$", "", f[1].split(",")[-1])
+    if tok and tok not in seen:
+        seen.append(tok)
+if not seen:
+    sys.exit(0)
+def norm(t):
+    d = unicodedata.normalize("NFKD", t)
+    return "".join(c for c in d if not unicodedata.combining(c)).lower()
+weight = {}
+try:
+    con = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
+    for tok in seen:
+        n = norm(beta_code_to_greek(tok))
+        weight[tok] = con.execute(
+            "SELECT COALESCE(SUM(LENGTH(definition)),0) FROM dictionary WHERE normalized_headword = ?", (n,)
+        ).fetchone()[0]
+except Exception:
+    pass
+best = max(seen, key=lambda t: (weight.get(t, 0), -seen.index(t)))
+sys.stdout.write(beta_code_to_greek(best))
+' "$DICTIONARY_DB")
 
-        # Strip homonym suffix (like λέγω3 → λέγω)
-        lemma=$(strip_homonym_suffix "$lemma")
-
-        if [ -n "$lemma" ]; then
-            # Convert back to Greek for final use
-            lemma=$(convert_beta_to_greek "$lemma")
-            echo "$lemma"
-        else
-            echo ""
-        fi
+        echo "$lemma"
 
     else
+	local word="$1"
+    	local plain_word=$(echo "$word" | sed 's/ā/a/g; s/ă/a/g;
+                                          s/ē/e/g; s/ĕ/e/g;
+                                          s/ī/i/g; s/ĭ/i/g;
+                                          s/ō/o/g; s/ŏ/o/g;
+                                          s/ū/u/g; s/ŭ/u/g;
+                                          s/ȳ/y/g;' )
         # LATIN logic: use existing method
-        morpheus $lang_flag -S -n <<< "$word" \
+        morpheus $lang_flag -S -n <<< "$plain_word" \
             | sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t \
             | awk '{
                   line = $0;
@@ -384,26 +423,26 @@ normalize_latin() {
                                 s/ō/o/g; s/ŏ/o/g; s/ö/o/g;
                                 s/ū/u/g; s/ŭ/u/g; s/ü/u/g;
                                 s/ȳ/y/g; s/ÿ/y/g;')
+
+    # Strip hyphens: compound headwords are stored without the hyphen a user
+    # would never type (e.g. "ab-aestuo" must match a search for "abaestuo")
+    input=$(echo "$input" | tr -d '-')
+
     echo "$input"
 }
 
 # Function to normalize Greek words for better matching
 normalize_greek() {
-    local input="$1"
-    # Convert to lowercase
-    input=$(echo "$input" | tr '[:upper:]' '[:lower:]')
-
-    # Replace breathings, accents, and other diacritics
-    input=$(echo "$input" | sed '
-        s/[ἀἁἂἃἄἅἆἇᾀᾁᾂᾃᾄᾅᾆᾇὰάᾰᾱᾲᾳᾴᾶᾷ]/α/g;
-        s/[ἐἑἒἓἔἕὲέ]/ε/g;
-        s/[ἠἡἢἣἤἥἦἧᾐᾑᾒᾓᾔᾕᾖᾗὴήῂῃῄῆῇ]/η/g;
-        s/[ἰἱἲἳἴἵἶἷὶίῐῑῒΐῖῗ]/ι/g;
-        s/[ὀὁὂὃὄὅὸό]/ο/g;
-        s/[ὐὑὒὓὔὕὖὗὺύῠῡῢΰῦῧ]/υ/g;
-        s/[ὠὡὢὣὤὥὦὧᾠᾡᾢᾣᾤᾥᾦᾧὼώῲῳῴῶῷ]/ω/g;
-        s/[ῤῥ]/ρ/g;')
-    echo "$input"
+    # NFKD, strip combining marks (accents, breathings, diaeresis, iota
+    # subscript), lowercase with correct final sigma. Must match
+    # normalize_greek() in scripts/prep-greek-db.py so lookups agree with the
+    # stored normalized_headword values (also handles capitals, NFD input and
+    # oxia/tonos variants, which a hand-written character table cannot).
+    python3 -c '
+import sys, unicodedata
+s = unicodedata.normalize("NFKD", sys.argv[1])
+sys.stdout.write("".join(c for c in s if not unicodedata.combining(c)).lower())
+' "$1"
 }
 
 # Choose the appropriate normalization function based on language
@@ -425,19 +464,35 @@ normalize_word() {
     # Convert Greek script to Beta Code
     beta_word=$(convert_greek_to_beta "$SEARCH_WORD_UNLEMMATIZED")
 
-    # Perform morphological analysis and clean formatting
+    # Perform morphological analysis. Morpheus answers in beta code, so
+    # convert every lemma field (which may be "form,lemma") back to Greek;
+    # the leading part-of-speech letter (N, V, ...) and the class labels stay
+    # as they are.
     echo "$beta_word" | morpheus $lang_flag -S -n |
       sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' |
-      while IFS= read -r line; do
-        word=$(echo "$line" | awk '{print $1}')
-        rest=$(echo "$line" | cut -d' ' -f2-)
-        greek_word=$(convert_beta_to_greek "$word")
-        printf "%-20s %s\n" "$greek_word" "$rest"
-      done | column -t
+      python3 -c '
+import re, sys
+from beta_code import beta_code_to_greek as to_greek
+for raw in sys.stdin:
+    f = raw.split()
+    if not f:
+        print()
+    elif len(f) == 1:                       # Morpheus echoes the analysed word
+        print(to_greek(f[0].replace("+", "")))
+    else:
+        if re.fullmatch(r"[A-Z]", f[0]):    # TYPE lemma[,lemma] features...
+            f[1] = ",".join(to_greek(p.replace("+", "")) for p in f[1].split(","))
+        print("  ".join(f))
+' | column -t
 
   else
     # For Latin or other languages
-    echo "$SEARCH_WORD_UNLEMMATIZED" | morpheus $lang_flag -S -n |
+    echo "$SEARCH_WORD_UNLEMMATIZED" | sed 's/ā/a/g; s/ă/a/g;
+                                          s/ē/e/g; s/ĕ/e/g;
+                                          s/ī/i/g; s/ĭ/i/g;
+                                          s/ō/o/g; s/ŏ/o/g;
+                                          s/ū/u/g; s/ŭ/u/g;
+                                          s/ȳ/y/g;' | morpheus $lang_flag -S -n |
       sed 's/<NL>/\n/g' | sed 's/<\/NL>//g' | column -t
   fi
 
@@ -450,56 +505,60 @@ select_from_matches() {
     local matches=("$@")
     local num_matches=${#matches[@]}
 
-    # Display the matches with numbers
-    echo "Multiple matches found. Please select one:" >&2
-    for i in $(seq 0 $((num_matches - 1))); do
-        # Extract just the headword from the line (before the pipe)
-        local headword=$(echo "${matches[$i]}" | cut -d'|' -f1)
-        echo "  $((i + 1)). $headword" >&2
-    done
+    # Use fzf only when a terminal is attached; otherwise fall through to the
+    # first-match fallback instead of silently printing nothing.
+    if command -v fzf &> /dev/null && { : </dev/tty; } 2>/dev/null; then
+        local headwords=()
+        for i in $(seq 0 $((num_matches - 1))); do
+            headwords+=("$((i + 1)). $(echo "${matches[$i]}" | cut -d'|' -f1)")
+        done
 
-    # Prompt for selection
-    echo "Enter number (1-$num_matches) or 'q' to quit: " >&2
-    read -r selection
+        local selected
+	selected=$(printf '%s\n' "${headwords[@]}" | fzf --height 40% --reverse --prompt="Select entry: " 2>/dev/tty)
 
-    # Validate selection
-    if [[ "$selection" == "q" ]]; then
-        echo "Search canceled." >&2
-        return 1
-    elif [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "$num_matches" ]; then
-        echo "${matches[$((selection - 1))]}"
-        return 0
+        if [ -z "$selected" ]; then
+            return 1
+        fi
+
+        local idx=$(echo "$selected" | grep -o '^[0-9]*' | head -1)
+        echo "${matches[$((idx - 1))]}"
     else
-        echo "Invalid selection. Displaying first match." >&2
+        # fallback
         echo "${matches[0]}"
-        return 0
     fi
 }
 
-
 # Prepare search query based on options
 NORMALIZED_WORD=$(normalize_word "$SEARCH_WORD")
+
+# Escaped variants for safe interpolation into SQL string literals (see
+# sql_escape above) -- prevents both crashes and injection on words/input
+# containing a single quote (e.g. the headword "vin'").
+SEARCH_WORD_SQL=$(sql_escape "$SEARCH_WORD")
+NORMALIZED_WORD_SQL=$(sql_escape "$NORMALIZED_WORD")
+SEARCH_WORD_UNLEMMATIZED_SQL=$(sql_escape "$SEARCH_WORD_UNLEMMATIZED")
 
 if [ "$MULTIPLE_MATCHES" = true ]; then
     # Search for multiple matches
     if [ "$EXACT_MATCH" = true ]; then
         # For exact match with multiple matches option
-        QUERY="SELECT headword, definition FROM dictionary WHERE headword = '$SEARCH_WORD' COLLATE NOCASE LIMIT $MAX_MATCHES;"
+        QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_WORD_SQL' COLLATE NOCASE ORDER BY (headword = '$SEARCH_WORD_SQL') DESC, id LIMIT $MAX_MATCHES;"
     else
         # For non-exact match with multiple matches option
-        QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_WORD'"
+        QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_WORD_SQL' COLLATE NOCASE"
 
         # If we used lemmatization, add condition for original word
         if [ "$LEMMATIZE" = true ]; then
             NORMALIZED_UNLEMMATIZED=$(normalize_word "$SEARCH_WORD_UNLEMMATIZED")
-            QUERY="$QUERY UNION ALL SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_UNLEMMATIZED'"
+            NORMALIZED_UNLEMMATIZED_SQL=$(sql_escape "$NORMALIZED_UNLEMMATIZED")
+            QUERY="$QUERY UNION SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_UNLEMMATIZED_SQL' COLLATE NOCASE"
         fi
 
         # Add partial matches as another condition
-        QUERY="$QUERY UNION ALL SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '$NORMALIZED_WORD%'"
+        QUERY="$QUERY UNION SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '$NORMALIZED_WORD_SQL%'"
 
         # Add matches within words as another condition
-        QUERY="$QUERY UNION ALL SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '%$NORMALIZED_WORD%'"
+        QUERY="$QUERY UNION SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '%$NORMALIZED_WORD_SQL%'"
 
         # Add limit at the end of the combined query
         QUERY="$QUERY LIMIT $MAX_MATCHES;"
@@ -534,35 +593,36 @@ else
     # Original search logic for single match
     if [ "$EXACT_MATCH" = true ]; then
         # For exact match, search directly in headword column
-        QUERY="SELECT headword, definition FROM dictionary WHERE headword = '$SEARCH_WORD' COLLATE NOCASE LIMIT 1;"
+        QUERY="SELECT headword, definition FROM dictionary WHERE headword = '$SEARCH_WORD_SQL' COLLATE NOCASE LIMIT 1;"
         RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
 
         # If no result, try with the original word
         if [ -z "$RESULT" ] && [ "$LEMMATIZE" = true ]; then
-            QUERY="SELECT headword, definition FROM dictionary WHERE headword = '$SEARCH_WORD_UNLEMMATIZED' COLLATE NOCASE LIMIT 1;"
+            QUERY="SELECT headword, definition FROM dictionary WHERE headword = '$SEARCH_WORD_UNLEMMATIZED_SQL' COLLATE NOCASE LIMIT 1;"
             RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
         fi
     else
         # For non-exact match, normalize the word and search in the normalized_headword column
-        QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_WORD' LIMIT 1;"
+        QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_WORD_SQL' COLLATE NOCASE ORDER BY (headword = '$SEARCH_WORD_SQL') DESC, id LIMIT 1;"
         RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
 
         # If no result and we used lemmatization, try with the original word
         if [ -z "$RESULT" ] && [ "$LEMMATIZE" = true ]; then
             NORMALIZED_UNLEMMATIZED=$(normalize_word "$SEARCH_WORD_UNLEMMATIZED")
-            QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_UNLEMMATIZED' LIMIT 1;"
+            NORMALIZED_UNLEMMATIZED_SQL=$(sql_escape "$NORMALIZED_UNLEMMATIZED")
+            QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword = '$NORMALIZED_UNLEMMATIZED_SQL' COLLATE NOCASE LIMIT 1;"
             RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
         fi
 
         # If still no result, try partial matches
         if [ -z "$RESULT" ]; then
-            QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '$NORMALIZED_WORD%' LIMIT 1;"
+            QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '$NORMALIZED_WORD_SQL%' LIMIT 1;"
             RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
         fi
 
         # If still no result, try searching within words
         if [ -z "$RESULT" ]; then
-            QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '%$NORMALIZED_WORD%' LIMIT 1;"
+            QUERY="SELECT headword, definition FROM dictionary WHERE normalized_headword LIKE '%$NORMALIZED_WORD_SQL%' LIMIT 1;"
             RESULT=$(sqlite3 "$DICTIONARY_DB" "$QUERY")
         fi
     fi
@@ -575,9 +635,13 @@ if [ -n "$RESULT" ]; then
     DEFINITION=$(echo "$RESULT" | cut -d '|' -f 2-)
 
     {
-        echo "Found entry: $HEADWORD"
+        echo -e "Found entry: $HEADWORD"
         echo "-------------------------------------------------------------"
-        echo "$DEFINITION"
+	echo "$DEFINITION" \
+            | sed 's/  */ /g' \
+            | sed 's/—Hence,/\n—Hence,/g' \
+            | sed 's/—/\n—/g' \
+            | sed '/^—/!s/^/  /'
     } | output_result
 
 # If no result was found, try to provide suggestions if enabled
@@ -590,14 +654,15 @@ else
             echo ""
             echo "Possible related entries:"
             NORMALIZED_WORD=$(normalize_word "$SEARCH_WORD")
-            SUGGEST_QUERY="SELECT headword FROM dictionary WHERE normalized_headword LIKE '$NORMALIZED_WORD%' LIMIT 5;"
+            NORMALIZED_WORD_SQL=$(sql_escape "$NORMALIZED_WORD")
+            SUGGEST_QUERY="SELECT headword FROM dictionary WHERE normalized_headword LIKE '$NORMALIZED_WORD_SQL%' LIMIT 5;"
             SUGGESTIONS=$(sqlite3 "$DICTIONARY_DB" "$SUGGEST_QUERY")
 
             if [ -n "$SUGGESTIONS" ]; then
                 echo "$SUGGESTIONS"
             else
                 # Try finding words that contain the search term
-                SUGGEST_QUERY="SELECT headword FROM dictionary WHERE normalized_headword LIKE '%$NORMALIZED_WORD%' LIMIT 5;"
+                SUGGEST_QUERY="SELECT headword FROM dictionary WHERE normalized_headword LIKE '%$NORMALIZED_WORD_SQL%' LIMIT 5;"
                 SUGGESTIONS=$(sqlite3 "$DICTIONARY_DB" "$SUGGEST_QUERY")
 
                 if [ -n "$SUGGESTIONS" ]; then
@@ -613,7 +678,6 @@ fi
 
 {
     echo "-------------------------------------------------------------"
-    echo "Database: $DICTIONARY_DB"
 } | output_result
 
 # Display the results if using a viewer
